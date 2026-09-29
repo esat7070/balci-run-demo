@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<!-- Sicherheitsregeln fuer den Browser: nur eigene Skripte und Styles,
+     Netzwerk nur zur eigenen Seite. -->
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; manifest-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'">
+<meta name="referrer" content="no-referrer">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+<title>Balci Run – Demo</title>
+<meta name="description" content="Die Demo von Balci Run: ein handgepixeltes Jump'n'Run. Yusuf Balci sammelt Honig und legt sich mit Mirkan, Lennart, Erfan und Huseyin an. Die ersten fünf Level.">
+<meta name="theme-color" content="#0e0a14">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Balci Run Demo">
+<link rel="manifest" href="manifest.webmanifest?v=demo1">
+<link rel="apple-touch-icon" href="icon-180.png">
+<meta property="og:title" content="Balci Run – Demo">
+<meta property="og:description" content="Die ersten fünf Level: Honig sammeln, Salat vermeiden, Mirkans Fragen überleben. Im Browser, am Handy und am PC.">
+<meta property="og:type" content="website">
+<link rel="stylesheet" href="style.css?v=demo1">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' fill='%230e0a14'/%3E%3Crect x='5' y='2' width='6' height='2' fill='%238a5a2a'/%3E%3Crect x='4' y='4' width='8' height='9' fill='%23ffc23c'/%3E%3Crect x='4' y='4' width='8' height='2' fill='%23ffe38a'/%3E%3Crect x='6' y='7' width='4' height='2' fill='%23e08a1e'/%3E%3C/svg%3E">
+</head>
+<body>
+
+<div id="frame">
+  <canvas id="screen" width="512" height="288"></canvas>
+
+  <div id="touch" aria-hidden="true">
+    <div class="pad-left">
+      <button class="tbtn" data-key="left">◀</button>
+      <button class="tbtn" data-key="right">▶</button>
+    </div>
+    <div class="pad-right">
+      <button class="tbtn" data-key="down">▼</button>
+      <button class="tbtn" data-key="throw">B</button>
+      <button class="tbtn big" data-key="jump">A</button>
+    </div>
+    <button class="tbtn tiny" data-key="pause" aria-label="Pause">≡</button>
+    <button class="tbtn tiny" id="fsbtn" type="button" aria-label="Vollbild">⛶</button>
+  </div>
+
+  <!-- Namenseingabe nach dem Durchspielen: ein echtes Textfeld, ohne Zeitdruck -->
+  <div id="nameform" hidden>
+    <form class="nf-inner" id="nfform" autocomplete="off">
+      <label for="nfname">DEIN NAME FÜR DIE BESTENLISTE</label>
+      <input id="nfname" name="n" maxlength="10" autocomplete="off" autocapitalize="characters"
+             autocorrect="off" spellcheck="false" enterkeyhint="done" placeholder="NAME">
+      <small>Bis zu 10 Zeichen: A–Z, 0–9, Ä Ö Ü, Punkt, Bindestrich</small>
+      <button id="nfok" type="submit">EINTRAGEN</button>
+    </form>
+  </div>
+</div>
+
+<div id="rotate">
+  <div class="rot-inner">
+    <div class="rot-phone"></div>
+    <p>DREH DEIN HANDY QUER</p>
+    <small>Balci Run läuft im Querformat</small>
+  </div>
+</div>
+
+<div id="tapstart" hidden>
+  <div class="tap-inner">
+    <p class="tap-logo">BALCI RUN</p>
+    <button id="startbtn" type="button">TIPPEN ZUM STARTEN</button>
+    <small id="fshint">startet im Vollbild</small>
+  </div>
+</div>
+
+<noscript>
+  <p class="noscript">
+    Dieses Spiel braucht JavaScript. Yusuf braucht Honig. Beide sind gerade enttäuscht.
+  </p>
+</noscript>
+
+<!-- Die Versionsnummer haengt an jeder Datei, damit nach einem Update
+     niemand eine alte Fassung aus dem Browser-Zwischenspeicher bekommt. -->
+<script src="demo.js?v=demo1"></script>
+<script src="src/font.js?v=demo1"></script>
+<script src="src/pixel.js?v=demo1"></script>
+<script src="src/sprites.js?v=demo1"></script>
+<script src="src/speicher.js?v=demo1"></script>
+<script src="src/audio.js?v=demo1"></script>
+<script src="src/balance.js?v=demo1"></script>
+<script src="src/input.js?v=demo1"></script>
+<script src="src/levels.js?v=demo1"></script>
+<script src="src/entities.js?v=demo1"></script>
+<script src="src/spass.js?v=demo1"></script>
+<script src="src/optionen.js?v=demo1"></script>
+<script src="src/game.js?v=demo1"></script>
+</body>
+</html>

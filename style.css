@@ -1,0 +1,211 @@
+*{margin:0;padding:0;box-sizing:border-box}
+[hidden]{display:none !important}
+
+html,body{
+  height:100%;
+  background:#07050b;
+  overflow:hidden;
+  touch-action:none;
+  -webkit-user-select:none;user-select:none;
+  -webkit-tap-highlight-color:transparent;
+}
+
+body{
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  /* subtle vignette so the pixel screen floats in the dark */
+  background:
+    radial-gradient(ellipse at 50% 45%, #171024 0%, #07050b 70%);
+}
+
+#frame{
+  position:relative;
+  line-height:0;
+}
+
+.noscript{color:#fff;font:16px monospace;padding:24px}
+
+#screen{
+  display:block;
+  image-rendering:-webkit-optimize-contrast; /* aeltere Safari/Android */
+  image-rendering:crisp-edges;
+  image-rendering:pixelated;
+  -webkit-touch-callout:none;                /* kein Halte-Menue am Handy */
+  background:#0e0a14;
+  box-shadow:
+    0 0 0 2px #241a33,
+    0 0 0 4px #0b0710,
+    0 18px 60px rgba(0,0,0,.8),
+    0 0 90px rgba(255,180,60,.07);
+  border-radius:2px;
+}
+
+/* ---- Touch-Knoepfe: nur auf Geraeten ohne Maus ---- */
+#touch{display:none}
+
+.tbtn{
+  -webkit-appearance:none;appearance:none;
+  font:700 24px/1 system-ui,sans-serif;
+  color:#ffe9b8;
+  background:rgba(24,16,34,.42);
+  border:2px solid rgba(255,206,110,.55);
+  border-radius:50%;
+  width:68px;height:68px;
+  display:grid;place-items:center;
+  touch-action:none;
+  -webkit-touch-callout:none;
+  text-shadow:0 1px 0 #000;
+}
+.tbtn.on{background:rgba(255,196,80,.62);color:#2a1a08;border-color:#ffe9a8}
+.tbtn.big{width:84px;height:84px;font-size:28px}
+.tbtn.tiny{
+  position:absolute;top:8px;
+  width:40px;height:40px;font-size:18px;border-radius:10px;
+  background:rgba(24,16,34,.6);
+}
+.tbtn.tiny[data-key="pause"]{right:8px}
+#fsbtn{right:56px}
+
+.pad-left,.pad-right{
+  position:absolute;bottom:10px;
+  display:flex;gap:10px;align-items:flex-end;
+}
+.pad-left{left:12px}
+.pad-right{right:12px}
+/* B etwas hoeher als A, wie auf einem Controller */
+.pad-right .tbtn[data-key="throw"]{margin-bottom:26px}
+
+@media (pointer:coarse){
+  #touch{display:block;position:fixed;inset:0;pointer-events:none;z-index:5}
+  #touch .tbtn{pointer-events:auto}
+  .pad-left,.pad-right{position:fixed}
+  .tbtn.tiny{position:fixed}
+  /* Rand des Geraets respektieren (Notch / Home-Indicator) */
+  .pad-left{left:max(12px, env(safe-area-inset-left));bottom:max(8px, env(safe-area-inset-bottom))}
+  .pad-right{right:max(12px, env(safe-area-inset-right));bottom:max(8px, env(safe-area-inset-bottom))}
+  .tbtn.tiny[data-key="pause"]{right:max(8px, env(safe-area-inset-right))}
+  #fsbtn{right:calc(max(8px, env(safe-area-inset-right)) + 48px)}
+  #screen{box-shadow:none;border-radius:0}
+  body{background:#000}
+}
+
+/* In Menues braucht man die Steuerknoepfe nicht — dort wird angetippt */
+body.inmenu .pad-left,body.inmenu .pad-right{display:none}
+
+/* Kleine Handys quer (z.B. iPhone 13 mit Adressleiste): etwas kompakter */
+@media (pointer:coarse) and (orientation:landscape) and (max-height:360px){
+  .tbtn{width:60px;height:60px;font-size:21px}
+  .tbtn.big{width:74px;height:74px;font-size:25px}
+  .pad-right .tbtn[data-key="throw"]{margin-bottom:20px}
+}
+
+/* ---- Hinweis, wenn das Handy hochkant gehalten wird ---- */
+#rotate{display:none}
+
+@media (pointer:coarse) and (orientation:portrait){
+  #rotate{
+    display:grid;place-items:center;
+    position:fixed;inset:0;z-index:50;
+    background:#0b0710;
+    color:#ffe9b8;
+    font:600 16px/1.5 system-ui,sans-serif;
+    text-align:center;
+  }
+  #rotate p{margin:20px 0 6px;letter-spacing:.06em}
+  #rotate small{color:#8f86a8;font-weight:400}
+  .rot-phone{
+    width:56px;height:92px;margin:0 auto;
+    border:3px solid #ffc23c;border-radius:10px;
+    animation:tip 1.6s ease-in-out infinite;
+  }
+  @keyframes tip{
+    0%,35%{transform:rotate(0deg)}
+    65%,100%{transform:rotate(-90deg)}
+  }
+  #frame,#touch{visibility:hidden}
+}
+
+/* ---- Startknopf am Handy (Vollbild braucht ein Tippen) ---- */
+#tapstart{
+  position:fixed;inset:0;z-index:40;
+  display:grid;place-items:center;
+  background:radial-gradient(ellipse at 50% 45%, #1d1330 0%, #07050b 75%);
+  color:#ffe9b8;text-align:center;
+  font:600 15px/1.4 system-ui,sans-serif;
+}
+.tap-logo{
+  font:800 34px/1 system-ui,sans-serif;letter-spacing:.08em;
+  color:#ffd257;text-shadow:0 3px 0 #5e2a10;margin-bottom:22px;
+}
+#startbtn{
+  -webkit-appearance:none;appearance:none;
+  font:800 18px/1 system-ui,sans-serif;letter-spacing:.06em;
+  color:#2a1a08;background:#ffc23c;
+  border:0;border-radius:14px;
+  padding:18px 30px;
+  box-shadow:0 5px 0 #a8641c;
+  touch-action:manipulation;
+}
+#startbtn:active{transform:translateY(3px);box-shadow:0 2px 0 #a8641c}
+#fshint{display:block;margin-top:16px;color:#8f86a8;font-weight:400}
+
+/* ---- Namenseingabe ---- */
+/* liegt im Rahmen ueber dem unteren Teil des Bildes, damit oben
+   "DURCHGESPIELT" und die Werte der Runde sichtbar bleiben */
+#nameform{
+  position:absolute;inset:0;z-index:30;
+  display:flex;align-items:flex-end;justify-content:center;
+  padding-bottom:5%;
+  pointer-events:none;
+  line-height:1.3;
+}
+.nf-inner{
+  pointer-events:auto;
+  display:flex;flex-direction:column;align-items:center;gap:10px;
+  background:rgba(12,8,18,.94);
+  border:2px solid #ffc23c;border-radius:12px;
+  padding:16px 20px 18px;
+  color:#ffe9b8;
+  font:600 14px/1.3 system-ui,sans-serif;
+  text-align:center;
+  max-width:92vw;
+}
+.nf-inner label{letter-spacing:.06em}
+.nf-inner small{color:#8f86a8;font-weight:400;font-size:12px}
+#nfname{
+  -webkit-user-select:text;user-select:text;
+  touch-action:manipulation;
+  width:min(300px, 80vw);
+  font:800 24px/1 ui-monospace,Menlo,Consolas,monospace;
+  letter-spacing:.14em;text-transform:uppercase;text-align:center;
+  color:#fff;background:#1c1428;
+  border:2px solid #6a5f80;border-radius:8px;
+  padding:10px 12px;
+  outline:none;
+}
+#nfname:focus{border-color:#ffd257}
+#nfok{
+  -webkit-appearance:none;appearance:none;
+  font:800 16px/1 system-ui,sans-serif;letter-spacing:.06em;
+  color:#2a1a08;background:#ffc23c;
+  border:0;border-radius:10px;
+  padding:12px 26px;
+  box-shadow:0 4px 0 #a8641c;
+  touch-action:manipulation;
+}
+#nfok:disabled{opacity:.5}
+
+/* Handy: Feld am ganzen Bildschirm ausrichten und beim Tippen nach oben,
+   damit die Tastatur es nicht verdeckt */
+@media (pointer:coarse){
+  #nameform{position:fixed;padding-bottom:max(12px, env(safe-area-inset-bottom))}
+  #nameform.typing{align-items:flex-start;padding:6px 0 0}
+  #nameform.typing .nf-inner{padding:8px 14px 10px;gap:6px}
+  #nameform.typing small,#nameform.typing label{display:none}
+}
+
+/* Desktop-/Steam-Version (preload.js setzt html.desktop): keine
+   Handy-Knoepfe, kein Startknopf, kein Vollbild-Knopf — auch nicht auf
+   dem Touchscreen des Steam Deck. */
+html.desktop #touch,html.desktop #tapstart,html.desktop #fsbtn{display:none!important}
