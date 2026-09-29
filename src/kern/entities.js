@@ -506,10 +506,8 @@
     }
 
     /* --- Horizontal --- */
-    var driving = !!(g.lvl && g.lvl.driving);
     var maxS = running ? MAX_RUN : MAX_WALK;
     if (this.power > 0) maxS += 0.5;
-    if (driving) maxS = running ? 4.8 : 3.8;   // der Mustang zieht
     if (bike) maxS = running ? 5.0 : 4.2;
     if (g.autoMax) maxS = Math.min(maxS, g.autoMax);
     // Level 26: Felix' Rauch — bekifft ist Yusuf etwas traeger (dafuer wuetend)
@@ -644,17 +642,7 @@
     var prevCx = this.cx();
     this.landTile = null; this.headTile = null; this.wallTile = null;
 
-    var keepVx = this.vx;
-    var hitX = moveX(this, world, this.vx);
-    // Im Mustang werden Strassensperren einfach ueberfahren.
-    if (driving && hitX !== 0 && this.wallTile) {
-      var wb = world.blockAt(this.wallTile[0], this.wallTile[1]);
-      if (wb && !wb.dead && wb.type === 'kiste') {
-        this.breakCrate(g, wb);
-        this.vx = keepVx * 0.85;
-        g.shake(3, 6);
-      }
-    }
+    moveX(this, world, this.vx);
 
     this.grounded = false;
     var hitY = moveY(this, world, this.vy);
@@ -778,8 +766,13 @@
     }
   };
 
+  /** Laeuft gerade ein Bosskampf? Dann gibt es keinen Gold-Doener (Esat,
+      29.09.: sonst ist man einfach unverwundbar und haut den Boss um). */
+  function imBosskampf(g) { return !!(g.boss && g.bossStarted && !g.boss.dead); }
+
   Player.prototype.spawnFromBlock = function (g, b) {
     var item = b.item || 'honig';
+    if (item === 'gold' && imBosskampf(g)) item = 'herz';
     var px = b.x * T + T / 2, py = b.y * T - 4;
     if (item === 'honig') {
       g.addItem('honig', px, py, true);
@@ -797,7 +790,7 @@
       { col: '#c79a5a', spread: 2.6, up: 0.6, life: 28, size: 3 });
     g.particles.burst(b.x * T + 8, b.y * T + 8, 6,
       { col: '#7d5224', spread: 2, up: 0.4, life: 24, size: 2 });
-    if (b.item) g.addItem(b.item, b.x * T + 8, b.y * T - 2, true);
+    if (b.item) g.addItem(b.item === 'gold' && imBosskampf(g) ? 'herz' : b.item, b.x * T + 8, b.y * T - 2, true);
     g.world.clearBlock(b);
     this.score += 50;
     g.floats.add(b.x * T + 8, b.y * T, '+50', '#e8dcc0', 40);
@@ -1148,8 +1141,8 @@
 
     // Kontakt mit Yusuf
     if (overlap(this, p) && !p.dead) {
-      // Im Auto (und auf dem Fahrrad) wird nicht diskutiert.
-      if (p.power > 0 || p.pound === -1 || (g.lvl && (g.lvl.driving || g.lvl.bike))) {
+      // Auf dem Fahrrad wird nicht diskutiert.
+      if (p.power > 0 || p.pound === -1 || (g.lvl && g.lvl.bike)) {
         this.squash(g, p);
       } else if (p.vy > 0.8 && p.feet() - this.y < 14) {
         this.stomped(g, p);
@@ -1622,6 +1615,11 @@
         g.floats.add(p.cx(), p.y - 10, 'EXTRALEBEN! BAKLAVA!', '#ffd257', 95);
         break;
       case 'gold':
+        if (imBosskampf(g)) {                 // im Bosskampf: nur ein Herz
+          p.heal(g, 1); p.score += 300; p.eatTimer = 60;
+          g.floats.add(p.cx(), p.y - 12, 'IM BOSSKAMPF: NUR EIN HERZ', '#ffe38a', 90);
+          break;
+        }
         p.power = 560; p.eatTimer = 60; p.laughTimer = 60; p.score += 300;
         global.Sound.play('power');
         g.shake(3, 8);
@@ -2202,7 +2200,56 @@
     };
   }
 
+  /* ---------- Kluges Laufen (Esat, 29.09.: "die Bosse sollen beim Laufen
+     mitdenken") ----------
+     klugLaufen ersetzt das sture Geradeauslaufen in den Lauf-Zustaenden:
+     - immer zu Yusuf hin, auch wenn er inzwischen die Seite gewechselt hat
+     - dorthin, wo er GLEICH ist (Vorhalten), nicht wohin er war
+     - kurz vor ihm abbremsen, statt drueberzulaufen
+     Und in bossMove fuer alle: faellt Yusuf von oben auf den Boss zu, macht
+     der manchmal einen schnellen Schritt zur Seite (nicht immer, mit Pause
+     dazwischen, nie waehrend eines Angriffs). */
+  // Abgestimmt mit dem Playtest-Bot: mit 25 % / 35 % dauerte Georgios doppelt
+  // so lange und kostete dreimal so viele Leben — so ist es fordernd, aber fair.
+  var AUSWEICHEN = { chance: 0.15, chanceWut: 0.22, pause: 160, dauer: 14, tempo: 3.2 };
+
+  function klugLaufen(b, g, tempo) {
+    var p = g.player;
+    var ziel = p.cx() + p.vx * 12;
+    var dx = ziel - b.cx(), adx = Math.abs(dx);
+    if (adx > 6) b.facing = dx > 0 ? 1 : -1;
+    b.vx = b.facing * tempo * Math.min(1, 0.25 + adx / 48);
+  }
+
+  function ausweichen(b, g) {
+    if (b.ausweichPause > 0) b.ausweichPause--;
+    if (b.ausweichT > 0) {
+      b.ausweichT--;
+      b.vx = b.ausweichDir * AUSWEICHEN.tempo;
+      return;
+    }
+    if (b.state !== 'idle' && b.state !== 'walk' && b.state !== 'gehen') return;
+    if (b.ausweichPause > 0 || b.dead || b.intro || !b.grounded || b.keinAusweichen) return;
+    var p = g.player;
+    if (!p || p.dead || p.grounded || p.vy < 1) return;
+    var nah = Math.abs(p.cx() - b.cx()) < b.w / 2 + 16;
+    var drueber = p.feet() < b.y + 6 && p.feet() > b.y - 90;
+    if (!nah || !drueber) return;
+    b.ausweichPause = AUSWEICHEN.pause;
+    if (Math.random() >= (b.rage ? AUSWEICHEN.chanceWut : AUSWEICHEN.chance)) return;
+    // Weg von Yusuf — steht er an der Wand, dann unter ihm durch
+    var dir = p.cx() > b.cx() ? -1 : 1;
+    if (g.arena) {
+      if (dir < 0 && b.x < g.arena.x + 40) dir = 1;
+      if (dir > 0 && b.x + b.w > g.arena.x + g.arena.w - 40) dir = -1;
+    }
+    b.ausweichDir = dir;
+    b.ausweichT = AUSWEICHEN.dauer;
+    g.particles.burst(b.cx(), b.y + b.h - 2, 6, { col: '#c8c0b0', spread: 1.6, up: 0.6, life: 16 });
+  }
+
   function bossMove(b, g) {
+    ausweichen(b, g);
     if (!b.bw) b.bw = bossWorld(g, b.floorRow);
     b.vy += GRAV;
     if (b.vy > MAX_FALL) b.vy = MAX_FALL;
@@ -2451,7 +2498,7 @@
         break;
 
       case 'walk':
-        this.vx = this.facing * 1.3 * spd;
+        klugLaufen(this, g, 1.3 * spd);
         if (this.timer <= 0) this.go('idle', this.rage ? 10 : 18);
         break;
 
@@ -2617,7 +2664,7 @@
     },
     erfan: {
       w: 26, h: 56, hp: 12, name: 'ERFAN', col: '#e8c24a',
-      spr: ['erfan', 'erfan'], scale: 2, stompY: 26, score: 2200,
+      spr: ['erfan', 'erfan2'], scale: 2, stompY: 26, score: 2200,
       rageName: 'SAFRAN-EKSTASE', rageCol: '#ff8a1a',
       letzte: { name: 'SAMOWAR-RAUSCH', col: '#ff3a2a', ruf: 'GANZER SAMOWAR!', vorher: 'DER TEE IST FERTIG.' }
     }
@@ -2660,6 +2707,18 @@
     // Mirkan: schwarze Felgen drauf. Damit ist er schneller (und hat die
     // alten zum Werfen). Die Ansage dazu kommt nur einmal.
     if (this.t === 'mirkan') { this.felgen = true; this.felgenAnsage = true; }
+    // Erfan: jede Form sieht anders aus (game.js zeichnet erfan_<look>);
+    // im Samowar-Rausch waechst er ausserdem wie Lennart
+    if (this.t === 'erfan') {
+      this.look = this.leben <= 1 ? 'samowar' : 'safran';
+      if (this.look === 'samowar' && this.scale < 3) {
+        var fussE = this.y + this.h, mitteE = this.cx();
+        this.scale = 3;
+        this.w = 38; this.h = 84; this.stompY = 36;
+        this.y = fussE - this.h;
+        this.x = mitteE - this.w / 2;
+      }
+    }
     if (this.t === 'lennart' && this.scale < 3) {
       // Lennart wird sichtbar groesser
       var footY = this.y + this.h, mid = this.cx();
@@ -2731,7 +2790,7 @@
         break;
 
       case 'walk':
-        this.vx = this.facing * (this.t === 'mirkan' ? 2.4 : 1.5) * spd;
+        klugLaufen(this, g, (this.t === 'mirkan' ? 2.4 : 1.5) * spd);
         if (this.timer <= 0) this.go('idle', this.rage ? 10 : 20);
         break;
 
@@ -2748,6 +2807,9 @@
         this.vx = this.facing * (this.t === 'mirkan' ? 6.0 : 3.8) * spd;
         if (this.t === 'mirkan' && this.timer % 18 === 0) {
           g.addProjectile('frage', this.cx() - 5, this.y + 2, -this.facing * 0.6, -2.2);
+        }
+        if (this.t === 'erfan' && this.timer % 11 === 0) {
+          g.addProjectile('rauch', this.cx() - 13 - this.facing * 24, this.y + this.h - 26, -this.facing * 0.3, -0.25);
         }
         if (this.t0 % 2 === 0) {
           g.particles.spawn({
@@ -3097,7 +3159,9 @@
         else if (r < 0.90) { this.go('jump', 56); this.vy = -9.0; this.vx = this.facing * 2.2; }
         else this.go('walk', 40);
       } else {
-        if (r < 0.18) this.go('spiesse', 32);
+        // Im Samowar-Rausch: auch ein Sturmlauf, der Dampf hinter sich laesst
+        if (this.phase >= 3 && r < 0.16) this.go('chargeprep', 22);
+        else if (r < 0.18) this.go('spiesse', 32);
         else if (r < 0.34) this.go('wirbel', 80);
         else if (r < 0.50) this.go('spiessregen', 70);
         else if (r < 0.62) this.go('samowar', 40);
@@ -3213,7 +3277,7 @@
         break;
 
       case 'walk':
-        this.vx = this.facing * 1.5 * spd;
+        klugLaufen(this, g, 1.5 * spd);
         if (this.timer <= 0) this.go('idle', this.rage ? 10 : 20);
         break;
 
@@ -3395,6 +3459,7 @@
       Damit er nicht wie frueher an Kanten klebt, springt er, wenn er
       zweimal gegen dasselbe Hindernis laeuft. */
   function alexMove(b, g) {
+    ausweichen(b, g);
     b.vy += GRAV;
     if (b.vy > MAX_FALL) b.vy = MAX_FALL;
     var hit = moveX(b, g.world, b.vx);
@@ -3466,7 +3531,7 @@
         break;
 
       case 'walk':
-        this.vx = this.facing * 1.5 * spd;
+        klugLaufen(this, g, 1.5 * spd);
         if (this.timer <= 0) this.go('idle', this.rage ? 12 : 22);
         break;
 
@@ -3798,7 +3863,7 @@
 
       // Er geht nicht. Er joggt. Schnell.
       case 'walk':
-        this.vx = this.facing * 2.4 * spd;
+        klugLaufen(this, g, 2.4 * spd);
         if (this.timer <= 0) this.go('idle', this.rage ? 10 : 18);
         break;
 
@@ -4078,7 +4143,7 @@
         break;
 
       case 'walk':
-        this.vx = this.facing * 1.8 * spd;
+        klugLaufen(this, g, 1.8 * spd);
         // Oben nicht von der Empore laufen
         if (this.oben && g.lvl.empore) {
           var em = g.lvl.empore;
@@ -4353,7 +4418,7 @@
 
       // Er geht nicht. Er flitzt.
       case 'walk':
-        this.vx = this.facing * 2.6 * spd;
+        klugLaufen(this, g, 2.6 * spd);
         if (this.timer <= 0) this.go('idle', this.rage ? 10 : 18);
         break;
 
@@ -4588,6 +4653,7 @@
       move: bossMove, contact: bossContact, death: bossDeath, bounce: bossBounce,
       startTransform: startTransform, tickTransform: tickTransform,
       dreiHerzen: dreiHerzen, herzWeg: herzWeg, herzPhase: herzPhase, naechstesLeben: naechstesLeben,
+      klugLaufen: klugLaufen, AUSWEICHEN: AUSWEICHEN,
       groundWaves: groundWaves, rainFromSky: rainFromSky, rageSparks: rageSparks,
       clearShots: clearShots, POUND_BOSS_DMG: POUND_BOSS_DMG
     },

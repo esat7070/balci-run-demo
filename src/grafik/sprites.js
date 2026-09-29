@@ -279,7 +279,7 @@
     b: '#2a2a34', n: '#d8d4cc'
   };
 
-  P.def('erfan', `
+  var ERFAN_KUNST = `
     ....kkkkkkkk....
     ..kkSSSSSSSSkk..
     .kSSSSSSSSSSSSk.
@@ -308,7 +308,58 @@
     .kbbbk....kbbbk.
     .knnnk....knnnk.
     .kkkkk....kkkkk.
-  `, ERFAN_PAL);
+  `;
+  P.def('erfan', ERFAN_KUNST, ERFAN_PAL);
+
+  /* Erfan als Boss bekommt ein Laufbild und zwei Formen (Esat, 29.09.:
+     "zu langweilig, bei der Mutation soll er anders aussehen"):
+     SAFRAN-EKSTASE: safranoranges Hemd, Safran-Schuerze, goldene Augen und
+       eine Krone aus Krokusblueten — daraus wird Safran gemacht.
+     SAMOWAR-RAUSCH: knallrotes Gesicht, rote Augen, dunkelrotes Hemd,
+       Tee-Flecken auf der Schuerze, ein Samowar auf dem Ruecken. */
+  var ERFAN_ZEILEN = P.art(ERFAN_KUNST);
+  function erfanLaufen(z) {
+    var n = z.slice(0, z.length - 3);
+    return n.concat(['..kbbbk..kbbbk..', '..knnnk..knnnk..', '..kkkkk..kkkkk..']);
+  }
+  var KROKUS = ['.....o..o..o....', '....coccoccoc...', '....cCccCccCc...'];
+  function mit(pal, dazu) {
+    var o = {}, k;
+    for (k in pal) o[k] = pal[k];
+    for (k in dazu) o[k] = dazu[k];
+    return o;
+  }
+  var SAFRAN_PAL = mit(ERFAN_PAL, {
+    r: '#e8801a', R: '#b85a10', a: '#ffd257', A: '#e8a830',
+    g: '#ffd21a', w: '#fff6c8',
+    c: '#9a5ad8', C: '#6a3aa8', o: '#ff3a1a'
+  });
+  var SAMOWAR_PAL = mit(ERFAN_PAL, {
+    s: '#f08a64', d: '#c85e44', S: '#ffb494',
+    g: '#e01a1a', w: '#fff0e0',
+    r: '#7a1812', R: '#4a0c08', a: '#d8b48a', A: '#a8804e'
+  });
+  P.def('erfan2', erfanLaufen(ERFAN_ZEILEN), ERFAN_PAL);
+  P.def('erfan_safran', KROKUS.concat(ERFAN_ZEILEN), SAFRAN_PAL);
+  P.def('erfan_safran2', KROKUS.concat(erfanLaufen(ERFAN_ZEILEN)), SAFRAN_PAL);
+  P.def('erfan_samowar', ERFAN_ZEILEN, SAMOWAR_PAL);
+  P.def('erfan_samowar2', erfanLaufen(ERFAN_ZEILEN), SAMOWAR_PAL);
+  /* ... und der Samowar auf seinem Ruecken (wird hinter ihm gezeichnet) */
+  P.def('samowar_ruecken', `
+    ...kk...
+    ..kYYk..
+    ..kbbk..
+    .kbbbbk.
+    kbYbbbbk
+    kbYbbbbk
+    kbYbBbbk
+    kbYbbbbk
+    .kbbbbk.
+    ..kbbk..
+    .kbbbbk.
+    kbbbbbbk
+    kkkkkkkk
+  `, { k: '#2a1a0c', b: '#d8a040', B: '#8a5a1a', Y: '#fff0a8' });
 
   /* Erfan frei und gluecklich — Arme hoch. */
   P.def('erfan_frei', `
@@ -2392,6 +2443,93 @@
   P.def('cla_heck', HECK_ART, heck('#2a2a32', '#16161c'));       // Erfan: schwarzer CLA
   P.def('polizei_heck', HECK_ART, heck('#e8ecf4', '#3a5ab8'));   // Streife
 
+  /* ----- Level 6: die Kolonne, Mirkan, geparkte Autos (von hinten) ----- */
+  P.def('eklasse_heck', HECK_ART, heck('#d8d2c2', '#9a9484'));   // Lennart: Opas silberne E-Klasse
+  P.def('park_rot', HECK_ART, heck('#a82a2a', '#6a1616'));
+  P.def('park_blau', HECK_ART, heck('#2a4a8a', '#162a52'));
+  P.def('park_gruen', HECK_ART, heck('#3a6a3a', '#1e3a1e'));
+  // Mirkans Cabrio: offen, man sieht die Sitze (und ihn, siehe fahrt.js)
+  var CABRIO_ART = `
+    ................................
+    ......kkkkk..........kkkkk......
+    .....kvvvvvk........kvvvvvk.....
+    .....kvVvvvkkkkkkkkkkvvvVvk.....
+    .....kcccccccccccccccccccck.....
+    ..kkkcccccccccccccccccccccckkk..
+    .kcccccccccccccccccccccccccccck.
+    kcrrrrRccccccccccccccccccRrrrrck
+    kcrRRrRccccccccccccccccccRrRRrck
+    kccccccccccccwwwwwwcccccccccccck
+    kccccccccccccwkkkkwcccccccccccck
+    kCCCCCCCCCCCCwwwwwwCCCCCCCCCCCCk
+    kCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCk
+    kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk
+    .kttttk..................kttttk.
+    .kttttk..................kttttk.
+    ..kkkk....................kkkk..
+  `;
+  var CABRIO_PAL = heck('#f4f6fa', '#cdd3de');
+  CABRIO_PAL.v = '#3c3642'; CABRIO_PAL.V = '#26212c';
+  P.def('cabrio_heck', CABRIO_ART, CABRIO_PAL);
+
+  /* ----- Level 12: Radfahrer von hinten (Esat, Lennart) ----- */
+  var RADLER_ART = `
+    .....hhhhhh.....
+    ....hhhhhhhh....
+    ....hhhhhhhh....
+    ....hhhhhhhh....
+    .....hhhhhh.....
+    ......ssss......
+    ...tttttttttt...
+    ..tttttttttttt..
+    .stttttttttttts.
+    .s.tttttttttt.s.
+    kk.tttttttttt.kk
+    kk..tttttttt..kk
+    ....pppppppp....
+    ...pp.ffff.pp...
+    ...ss.ffff.ss...
+    ...ss.ffff.kk...
+    ...kk.ffff......
+    ......kkkk......
+    ......kTTk......
+    ......kTTk......
+    ......kTTk......
+    ......kTTk......
+    ......kTTk......
+    .......kk.......
+  `;
+  // Zweites Bild: das andere Bein unten — er tritt
+  var RADLER_ART2 = RADLER_ART.replace('...ss.ffff.kk...\n    ...kk.ffff......',
+                                       '...kk.ffff.ss...\n    ......ffff.kk...');
+  function radlerPal(h, s, t, pp, f) {
+    return { k: '#15121a', T: '#3a3a42', h: h, s: s, t: t, p: pp, f: f };
+  }
+  P.def('radler_e', RADLER_ART, radlerPal('#1c1418', '#eab48c', '#2b2b33', '#242630', '#4ad8c8'));
+  P.def('radler_e2', RADLER_ART2, radlerPal('#1c1418', '#eab48c', '#2b2b33', '#242630', '#4ad8c8'));
+  P.def('radler_l', RADLER_ART, radlerPal('#6a4424', '#f0c09a', '#f4f4ee', '#2a2a3a', '#ff6fa8'));
+  P.def('radler_l2', RADLER_ART2, radlerPal('#6a4424', '#f0c09a', '#f4f4ee', '#2a2a3a', '#ff6fa8'));
+
+  /* Eine Kuh auf der Alm. Von vorne. Sie hat Vorfahrt. */
+  P.def('kuh', `
+    yy............yy
+    .yy..........yy.
+    ..kkkkkkkkkkkk..
+    .kwwwwkkkwwwwwk.
+    kwwwkkkkkwwwwwwk
+    kwwgkwwwwwwkgwwk
+    .kwwwwwwwwwwwwk.
+    ..kwwwwwwwwwwk..
+    ..kppppppppppk..
+    ..kpkkppppkkpk..
+    ...kppppppppk...
+    ...kkkkkkkkkk...
+    ..kwwkwwwwkwwk..
+    ..kwk.kwwk.kwk..
+    ..kwk..kk..kwk..
+    ..kkk......kkk..
+  `, { k: '#1a1418', w: '#f4f2ec', g: '#3a2410', p: '#f4a0b0', y: '#e8d8b0' });
+
   /* Explosives Fass. Nicht reinfahren. Oder doch — sieht gut aus. */
   P.def('fass', `
     .kkkkkkkkkk.
@@ -3229,6 +3367,15 @@
       fill: ['#8e8a84', '#76726c', '#5e5a56', '#3a3834'],
       sky:  ['#4a86d4', '#7ab0e6', '#c4dcf0', '#f2d8a4'],
       far:  '#8ea2c2', near: '#6a7c9a',
+      accent: '#ffd257'
+    },
+    // Vor Yusufs Haus bei Nacht (Level 11: Broke wartet — es ist
+    // schon dunkel, wie auf dem Heimweg davor)
+    siedlung_nacht: {
+      top:  ['#8a8a96', '#6a6a78', '#4e4e5a', '#2e2e38'],
+      fill: ['#4e4e5a', '#3e3e4a', '#30303a', '#1c1c24'],
+      sky:  ['#0a0c1c', '#161a36', '#2a2650', '#5a3a62'],
+      far:  '#232a44', near: '#1a2036',
       accent: '#ffd257'
     },
     // Der Hausberg: Gras oben, Erde darunter, Morgenhimmel

@@ -163,7 +163,7 @@
   function tick(G) {
     var p = G.player;
     if (!p || p.dead || !G.lvl) return;
-    var zuFuss = !G.lvl.driving && !G.lvl.bike && !G.scene && !G.eat && !(G.modus && G.modMod && G.modMod.full);
+    var zuFuss = !G.lvl.bike && !G.scene && !G.eat && !(G.modus && G.modMod && G.modMod.full);
     if (G.squash > 0) G.squash--;
     if (zuFuss) {
       // Landen: Staub, und Yusuf staucht sich
@@ -267,7 +267,7 @@
       G.bossRest = { name: b.barName || (karte ? karte[0] : 'DER BOSS'), pct: Math.max(1, Math.round(rest * 100)) };
     }
     // Ein Grabstein, wo er zuletzt stand
-    var zuFuss = !G.lvl.driving && !G.scene && !G.eat && !(G.modus && G.modMod && G.modMod.full);
+    var zuFuss = !G.scene && !G.eat && !(G.modus && G.modMod && G.modMod.full);
     if (zuFuss) {
       var ort = (fell || !p.grounded) ? G.letzterBoden : { x: p.cx(), y: p.feet() };
       if (ort) {
@@ -287,6 +287,8 @@
     var nGold = G.goldIdx ? G.goldIdx.length : 0, got = G.goldCount ? G.goldCount() : 0;
     var honig = 0;
     lvl.items.forEach(function (it) { if (it.t === 'honig') honig++; });
+    // Level aus Yusufs Sicht (fahrt.js, downhill.js) legen ihren Honig selbst aus
+    if (G.modus && G.modus.honigZahl) honig = G.modus.honigZahl;
     var k = {
       gold: !nGold || got === nGold,
       tod: (G.levelTode || 0) === 0,

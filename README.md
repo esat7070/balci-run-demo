@@ -9,7 +9,7 @@ Huseyin im Weg.
 
 - **5 Level**, 4 Bosse mit je drei Herzen und drei Formen
 - Honig und Goldhonig sammeln, Trophäen, Bestenliste im eigenen Browser
-- Drei Schwierigkeitsgrade
+- Kein Game Over: weiter geht es immer am letzten Checkpoint
 
 ## Steuerung
 

@@ -209,7 +209,8 @@
   /* Level mit eigener Spielart. Die Module stehen in eigenen Dateien.
      full = das Modul uebernimmt Welt und Bild ganz (Rennen, Doenerbude),
      sonst laeuft es zusaetzlich zur normalen Huepfwelt (Fussball). */
-  var MODI = { fussball: 'Fussball', rennen: 'Rennen', doener: 'DoenerBude', pizza: 'PizzaOfen', flug: 'Flug' };
+  var MODI = { fussball: 'Fussball', rennen: 'Rennen', doener: 'DoenerBude', pizza: 'PizzaOfen', flug: 'Flug',
+               fahrt: 'Fahrt', downhill: 'Downhill' };
   function modul(lvl) { return (lvl.mode && global[MODI[lvl.mode]]) || null; }
 
   /* Die Bosse ab Level 17 (bosse.js): welche Klasse, welche Musik,
@@ -248,14 +249,12 @@
     G.boss = null; G.bossStarted = false;
     G.arena = lvl.arena ? { x: lvl.arena.x * T, w: lvl.arena.w * T }
             : (lvl.boss ? { x: (lvl.boss.x - 34) * T, w: 45 * T } : null);
-    G.mirkanTriggers = (lvl.mirkan || []).slice();
-    G.mirkan = null;
     // Level 8 ist keine Huepfstrecke, sondern die Szene aus eat.js
     G.eat = (lvl.eat && global.Eat) ? global.Eat.init(G, lvl) : null;
     G.modMod = modul(lvl);
     G.kasse = null;
     G.scene = null;           // Schlafengehen nach Level 11
-    G.cut = null;             // Lennarts Auftritt in Level 12
+    G.cut = null;             // Mirkans Auftritt im Airsoft (Level 21)
     G.jagd = null;            // Level 25: die Security hinter Yusuf (reise.js)
     G.high = 0;               // Level 26: Felix' Rauch. Wer stirbt, ist wieder klar.
     // Level 29/30: Semihs Dimensionen (Schwerkraft, Wind, klein sein, Scherben)
@@ -309,12 +308,11 @@
       G.player.score = st.score;
       G.player.eatCount = st.eatCount;
     }
-    // Im Mustang ist die Trefferbox so breit wie das (doppelt grosse) Auto,
-    // auf dem Fahrrad etwas breiter und hoeher als zu Fuss.
-    G.player.w = lvl.driving ? 64 : (lvl.bike ? 20 : 12);
-    G.player.h = lvl.driving ? 24 : (lvl.bike ? 28 : 26);
+    // Auf dem Fahrrad (Level 22) ist die Trefferbox etwas breiter und hoeher
+    G.player.w = lvl.bike ? 20 : 12;
+    G.player.h = lvl.bike ? 28 : 26;
     G.player.y = sp[1] * T - G.player.h;
-    // Esat kommt mit (Level 12 auf dem Rad, Level 14 und 15 zu Fuss) —
+    // Ein Kumpel kommt mit (Level 14 und 15 Esat zu Fuss, Level 22 Sonnet) —
     // immer auf Yusufs Spur, siehe updateRider
     G.rider = (lvl.bike || lvl.buddy) ? { hist: [], talkT: 260 } : null;
     G.dizzy = 0;
@@ -332,21 +330,9 @@
       saveCheckpointState();
       G.levelStart = snapshotStats();
     }
-    // Wer in die Kolonne eingestiegen ist, bleibt es auch nach einem Tod —
-    // sonst kommt Erfans Dialog nach jedem Sturz wieder.
+    // Wer in die Kolonne eingestiegen ist (Level 6, fahrt.js), bleibt es auch
+    // nach einem Tod — sonst kommt Erfans Dialog nach jedem Sturz wieder.
     if (!respawn || !G.convoySeen) G.convoySeen = {};
-
-    // Level 6: Kolonne und Ampeln. Wer schon eingestiegen war, ist nach
-    // einem Checkpoint direkt wieder dabei — ohne den Dialog nochmal.
-    G.convoy = [];
-    G.convoyTriggers = [];
-    (lvl.convoy || []).forEach(function (c) {
-      if (c.at * T < G.player.x || G.convoySeen[c.who]) G.convoy.push(convoyCar(c.who));
-      else G.convoyTriggers.push(c);
-    });
-    G.ampeln = (lvl.ampeln || []).map(function (ax, n) {
-      return { x: ax * T, off: n * 97, passed: ax * T < G.player.x };
-    });
 
     G.cam.x = Math.max(0, Math.min(lvl.w * T - W, G.player.cx() - W / 2));
     G.cam.y = Math.max(0, Math.min(lvl.h * T - H, G.player.y - H / 2));
@@ -388,72 +374,6 @@
     if (global.Spass) global.Spass.levelFertig(G, idx);
   }
 
-  /* ================= Level 6: Kolonne & Ampeln ================= */
-
-  // Autos in der Kolonne: fahren auf der hinteren Spur mit
-  var CONVOY_CARS = {
-    erfan:   { spr: 'cla',     head: 'erfan_head',   off: -86,  name: 'ERFAN',   col: '#e8c24a' },
-    lennart: { spr: 'eklasse', head: 'lennart_head', off: -166, name: 'LENNART', col: '#e8b894' }
-  };
-
-  function convoyCar(who) {
-    var p = G.player;
-    return { who: who, def: CONVOY_CARS[who], x: p.cx() + CONVOY_CARS[who].off - 200,
-             y: p.feet(), t: 0 };
-  }
-
-  var MIRKAN_OFF = 58;         // Mirkan faehrt leicht versetzt vorne mit
-  var AMPEL_CYCLE = 360;      // gruen 0-179, gelb 180-219, rot 220-359
-  function ampelColor(a) {
-    var t = (G.tick + a.off) % AMPEL_CYCLE;
-    return t < 180 ? 'gruen' : (t < 220 ? 'gelb' : 'rot');
-  }
-
-  function updateDriving(p) {
-    var i;
-    // Neue Kollegen
-    if (G.convoyTriggers.length && p.cx() > G.convoyTriggers[0].at * T) {
-      var c = G.convoyTriggers.shift();
-      G.convoy.push(convoyCar(c.who));
-      G.convoySeen[c.who] = true;
-      S.play('oneUp');
-      if (LV.convoy && LV.convoy[c.who]) {
-        startDialog(LV.convoy[c.who], function () { G.state = 'play'; });
-      }
-    }
-    // Kolonne folgt weich hinter Yusuf
-    for (i = 0; i < G.convoy.length; i++) {
-      var m = G.convoy[i];
-      m.t++;
-      m.x += ((p.cx() + m.def.off) - m.x) * 0.07;
-      m.y += (p.feet() - m.y) * 0.12;
-      if (m.t % 7 === 0) {
-        G.particles.spawn({ x: m.x - 34, y: m.y - 14, vx: -0.6, vy: -0.2, life: 20,
-                            col: '#8e8880', size: 2, grav: -0.01 });
-      }
-    }
-    // Ampeln
-    for (i = 0; i < G.ampeln.length; i++) {
-      var a = G.ampeln[i];
-      if (a.passed || p.dead || p.cx() < a.x + 8) continue;
-      a.passed = true;
-      var col = ampelColor(a);
-      if (col === 'rot') {
-        G.flashScreen('#ffffff', 22);
-        S.play('bossHit');
-        var pen = Math.min(p.score, 150);
-        p.score -= pen;
-        G.floats.add(p.cx(), p.y - 30, 'GEBLITZT! -' + pen, '#ff6a6a', 90);
-        G.floats.add(p.cx(), p.y - 44, 'ROT WAR SCHON 3 SEKUNDEN.', '#f4f4ee', 90);
-      } else if (col === 'gruen') {
-        p.score += 50;
-        G.floats.add(p.cx(), p.y - 30, 'GRÜNE WELLE +50', '#8cd85a', 70);
-      } else {
-        G.floats.add(p.cx(), p.y - 30, 'DUNKELGELB. GERADE NOCH.', '#ffd257', 70);
-      }
-    }
-  }
-
   /* Szenen ohne Huepfen (eat.js): Schlafen, Essen am Tisch, Shisha. */
   function sceneMod() {
     var t = G.scene && G.scene.type;
@@ -475,9 +395,9 @@
     G.state = 'play';
   }
 
-  /* ================= Level 12: Esat faehrt mit ================= */
+  /* ================= Ein Kumpel faehrt mit ================= */
 
-  // Esat faehrt Yusufs Spur nach, ein Stueck dahinter. So springt er ueber
+  // Der Kumpel (Esat, Sonnet) faehrt Yusufs Spur nach, ein Stueck dahinter. So springt er ueber
   // dieselben Rampen und Luecken, ohne eigene Physik zu brauchen.
   var RIDER_GAP = 46;
 
@@ -515,205 +435,12 @@
     }
   }
 
-  /** Oberkante des Bodens an einer Stelle (fuer Lennart und seine Teile). */
+  /** Oberkante des Bodens an einer Stelle (fuer den Kumpel auf der Rampe). */
   function groundAt(px) {
     var w = G.world, tx = Math.floor(px / T);
     if (tx < 0 || tx >= w.w) return null;
     for (var ty = 0; ty < w.h; ty++) if (w.solid(tx, ty)) return ty * T;
     return null;
-  }
-
-  /* ================= Level 12: Lennarts Auftritt =================
-     Yusuf und Esat bremsen, es droehnt von hinten. Lennart rast heran,
-     springt ueber die beiden (Standbild mit Namen, wie im Kino), macht
-     einen Salto — und beim dritten Sprung fliegt er auf die Nase. Das
-     Rad ist hin. Yusuf und Esat fahren einfach vorbei. */
-
-  function updateLennart(p) {
-    var c = G.cut, cl = LV.lennartCut, L;
-    if (!c) {
-      if (G.lennartLie || p.won || p.dead) return;
-      var at = G.lvl.lennart.at * T;
-      if (p.cx() > at && p.cx() < at + 12 * T) {
-        G.cut = { t: 0, phase: 'stopp', bars: 0, L: null, debris: [], said: {} };
-        G.autoAx = 0;                     // Yusuf und Esat bremsen
-        G.autoMax = 0;
-      }
-      return;
-    }
-
-    c.t++;
-    c.bars = (c.phase === 'aus') ? Math.max(0, c.bars - 0.06) : Math.min(1, c.bars + 0.05);
-    L = c.L;
-    if (L && c.phase !== 'karte') moveLennart(c, L);
-    moveDebris(c.debris);
-
-    switch (c.phase) {
-      case 'stopp':
-        if (c.t === 16) G.say('esat', cl.esatHear, 70);
-        if (c.t === 24 || c.t === 46 || c.t === 64) { S.play('bossRoar'); G.shake(2, 10); }
-        if (c.t === 50) G.say('yusuf', cl.yusufHear, 70);
-        if (c.t >= 86) {
-          // Er kommt von hinten, schon in der Luft
-          var sx = G.cam.x - 40;
-          var gy0 = groundAt(sx);
-          c.L = L = { x: sx, y: (gy0 === null ? p.feet() : gy0) - 30, vx: 7.5, vy: -2,
-                      a: 0, spin: 0, air: true, jumps: 0, rideT: 0, lie: false };
-          c.phase = 'kommt';
-          S.music('bossfinal');
-          G.say('lennart', cl.jump1, 90);
-        }
-        break;
-
-      case 'kommt':
-        // Direkt hinter den beiden: Absprung, drueber weg
-        if (L.jumps === 0 && !L.air && L.x > p.cx() - 90) {
-          L.vy = -9; L.air = true; L.jumps = 1;
-          S.play('doubleJump');
-        }
-        // Ganz oben: Standbild mit Namen
-        if (L.jumps === 1 && L.air && L.vy >= -0.5 && !c.cardDone) {
-          c.phase = 'karte'; c.card = 0; c.cardDone = true;
-          G.flashScreen('#ffffff', 14);
-          S.play('power');
-        }
-        break;
-
-      case 'karte':
-        c.card++;
-        if (c.card >= 100) { c.phase = 'fahrt'; L.vx = 6.5; }
-        break;
-
-      case 'fahrt':
-        G.camFocus = { x: L.x + 40, y: L.y - 20 };
-        if (!L.air) L.rideT++;
-        if (L.jumps === 1 && !L.air && L.rideT >= 18) {
-          // Zweiter Sprung: ein sauberer Rueckwaertssalto
-          L.vy = -9.5; L.air = true; L.jumps = 2; L.rideT = 0;
-          L.spin = Math.PI * 2 / 36; L.spinLeft = Math.PI * 2;
-          S.play('doubleJump');
-        }
-        if (L.jumps === 2 && !L.air && L.rideT === 1) G.say('lennart', cl.jump2, 70);
-        if (L.jumps === 2 && !L.air && L.rideT >= 14) {
-          // Dritter Sprung: dreht zu weit. Viel zu weit.
-          L.vy = -9.5; L.air = true; L.jumps = 3; L.rideT = 0;
-          L.spin = Math.PI * 2 / 28; L.spinLeft = 99;
-          S.play('doubleJump');
-          G.say('lennart', cl.jump3, 60);
-        }
-        break;
-
-      case 'crash':
-        G.camFocus = { x: L.x, y: L.y - 20 };
-        if (++c.lieT === 34) G.say('lennart', cl.crash, 60);
-        if (c.lieT === 100) G.say('lennart', cl.lying, 90);
-        if (c.lieT >= 170) {
-          c.phase = 'vorbei';
-          G.camFocus = null;
-          G.autoAx = 1;
-          G.autoMax = 4.2;
-        }
-        break;
-
-      case 'vorbei':
-        // Einfach weiterfahren. Nichts gesehen.
-        var dist = L.x - p.cx();
-        G.autoMax = dist < 190 ? 2.2 : 4.2;
-        if (dist < 170 && !c.said.e1) { c.said.e1 = true; G.say('esat', cl.esatPass, 90); }
-        if (dist < 90 && !c.said.y1) { c.said.y1 = true; G.say('yusuf', cl.yusufPass, 70); }
-        if (dist < 24 && !c.said.l1) { c.said.l1 = true; G.say('lennart', cl.lennartPass, 110); }
-        if (dist < -70 && !c.said.e2) { c.said.e2 = true; G.say('esat', cl.esatAfter, 90); }
-        if (dist < -110) {
-          c.phase = 'aus';
-          G.autoAx = null; G.autoMax = 0;
-          G.lennartLie = { x: L.x, y: L.y, debris: c.debris };
-          S.music(G.lvl.music);
-        }
-        break;
-
-      case 'aus':
-        if (c.bars <= 0) G.cut = null;
-        break;
-    }
-  }
-
-  function moveLennart(c, L) {
-    if (L.lie) {
-      // Er rutscht noch ein Stueck auf dem Bauch
-      L.vx *= 0.85;
-      L.x += L.vx;
-      L.a += (Math.PI / 2 - L.a) * 0.3;
-      return;
-    }
-    L.x += L.vx;
-    if (L.air) {
-      L.vy += 0.5;
-      L.y += L.vy;
-      if (L.spin) {
-        L.a += L.spin;
-        if (L.spinLeft !== undefined) {
-          L.spinLeft -= Math.abs(L.spin);
-          if (L.spinLeft <= 0) { L.spin = 0; L.a = 0; }
-        }
-      }
-      var gy = groundAt(L.x);
-      if (gy !== null && L.y >= gy && L.vy >= 0) {
-        L.y = gy; L.vy = 0; L.air = false; L.rideT = 0;
-        if (L.jumps >= 3) lennartCrash(c, L);
-        else { L.a = 0; L.spin = 0; }
-      }
-    } else {
-      var gy2 = groundAt(L.x);
-      if (gy2 === null || gy2 > L.y + 2) L.air = true;
-      else L.y = gy2;
-    }
-    // Nitro: Flammen aus dem Hinterrad, Staub vom Boden
-    if (!L.lie && G.tick % 2 === 0) {
-      G.particles.spawn({ x: L.x - 14, y: L.y - 8, vx: -2 - Math.random() * 2, vy: -0.3,
-                          life: 14, col: (G.tick % 4) ? '#ff8a2a' : '#6fc8e8', size: 3, grav: -0.02 });
-      if (!L.air) {
-        G.particles.spawn({ x: L.x - 10, y: L.y - 2, vx: -1.5, vy: -0.8, life: 18,
-                            col: '#c8a070', size: 2, grav: 0.05 });
-      }
-    }
-  }
-
-  function lennartCrash(c, L) {
-    L.lie = true;
-    L.vx = 3;
-    // Beim Fahren dreht der Salto gegen den Uhrzeigersinn (siehe
-    // drawBikeRider), liegend wird im Uhrzeigersinn gezeichnet.
-    L.a = -(L.a % (Math.PI * 2));
-    c.phase = 'crash';
-    c.lieT = 0;
-    S.stopMusic();                  // Stille. Nur der Aufprall.
-    S.play('die');
-    S.play('brk');
-    G.shake(10, 30);
-    G.particles.burst(L.x, L.y - 6, 30, { col: '#8a6440', spread: 3.6, up: 1.4, life: 34 });
-    G.particles.burst(L.x, L.y - 10, 12, { col: '#ff6fa8', spread: 3, up: 1.6, life: 30 });
-    // Das Rad fliegt auseinander
-    c.debris.push({ spr: 'rad', x: L.x + 6, y: L.y - 12, vx: 4.2, vy: -6.5, a: 0 });
-    c.debris.push({ spr: 'rad', x: L.x - 4, y: L.y - 12, vx: 2.6, vy: -8, a: 0 });
-    c.debris.push({ spr: 'bike_kaputt', x: L.x, y: L.y - 8, vx: 1.4, vy: -4, a: 0 });
-  }
-
-  function moveDebris(list) {
-    for (var i = 0; i < list.length; i++) {
-      var d = list[i];
-      if (d.rest) continue;
-      d.vy += 0.5;
-      d.x += d.vx; d.y += d.vy;
-      if (d.spr === 'rad') d.a += d.vx * 0.18;
-      var gy = groundAt(d.x);
-      if (gy !== null && d.y >= gy) {
-        d.y = gy;
-        d.vy = -d.vy * 0.35;
-        d.vx *= 0.8;
-        if (Math.abs(d.vy) < 1 && Math.abs(d.vx) < 0.2) d.rest = true;
-      }
-      if (d.y > G.world.h * T + 40) d.rest = true;
-    }
   }
 
   /* ================= Dialoge ================= */
@@ -811,10 +538,11 @@
   G.onGold = function () { if (global.Spass) global.Spass.gold(G); };
   G.onKill = function (fell) { if (global.Spass) global.Spass.tod(G, fell); };
 
-  /** Yusuf ist tot. Jeder Tod kostet ein Leben, weiter geht es am letzten
-      Checkpoint. Sind alle Leben weg, gibt es KEIN Game Over mehr: Yusuf
-      faengt am Startpunkt des Levels wieder an, mit frischen Leben. Sonst
-      bleibt alles wie bei jedem Tod — Honig und Punkte vom letzten
+  /** Yusuf ist tot. Jeder Tod kostet ein Leben, weiter geht es IMMER am
+      letzten Checkpoint (bzw. am Levelstart, wenn noch keiner erreicht
+      ist). Sind alle Leben weg, gibt es weder Game Over noch einen Neustart
+      des Levels (Esat, 29.09.): frische Leben, weiter am Checkpoint.
+      Sonst bleibt alles wie bei jedem Tod — Honig und Punkte vom letzten
       Checkpoint, Eingesammeltes bleibt weg, der Boss steht beim Herz, bei
       dem man war, und ein schon besiegter Boss kommt nicht wieder. */
   G.onPlayerDead = function () {
@@ -824,15 +552,13 @@
     var alleWeg = p.lives <= 0;
     if (alleWeg) {
       p.lives = BAL.s('leben');
-      G.checkpoint = null;
-      G.flugCp = 0;               // Level 27: auch der Flug von vorn
       G.lebenWeg = (G.lebenWeg || 0) + 1;
       if (global.Spass) global.Spass.gameOver(G);
     }
     fadeTo(function () {
       if (alleWeg && G.toasts) {
         G.toasts.push({ art: 'text', zeile1: 'ALLE LEBEN WEG. HUSEYIN HAT ES GESEHEN.',
-                        zeile2: 'ZURÜCK AN DEN START. ' + p.lives + ' NEUE LEBEN.', col: '#ffd257', zeit: 220 });
+                        zeile2: p.lives + ' NEUE LEBEN. WEITER AM LETZTEN CHECKPOINT.', col: '#ffd257', zeit: 220 });
       }
       loadLevel(G.lvlIndex, true);
       var l = (G.lvl.airsoft && LV.airsoft) ? LV.airsoft.respawn : LV.deathLines;
@@ -1152,6 +878,12 @@
     bossDown(LV.riese.end, function () { nextLevel(17); });
   };
 
+  /** Level 6 und 12 aus Yusufs Sicht (fahrt.js, downhill.js): angekommen.
+      Weiter wie bei jedem Levelende — Stilbruch bzw. unten am Berg. */
+  G.onFahrtDone = function () { finishLevel(); };
+  /** Checkpoint aus einem Modul heraus (Honig, Punkte, Gold merken). */
+  G.checkpointSpeichern = function () { saveCheckpointState(); };
+
   /** Rennen gewonnen. Und dann kommt die Polizei. */
   G.onRennenDone = function () {
     recordBest(G.lvlIndex);
@@ -1285,7 +1017,6 @@
     switch (G.state) {
       case 'title': updateTitle(); break;
       case 'select': updateSelect(); break;
-      case 'stufe': updateStufe(); break;
       case 'howto': updateHowto(); break;
       case 'dialog': updateDialog(); updateWorld(); break;
       // Hit-Stop: nach einem Treffer steht das Bild ein paar Ticks still.
@@ -1346,50 +1077,10 @@
   function titleMenuTop(n) { return 160 - (n - 5) * 9; }   // 8 Eintraege (Desktop mit WEITER) enden ueber dem Boden
   function titleBoardRect() { return { x: W - 158, y: 110, w: 150, h: 96 }; }
 
-  /** Vor jedem neuen Start (NEUES SPIEL, LEVEL WAEHLEN): Schwierigkeitsgrad. */
-  function stufeWaehlen(idx, zurueck) {
-    G.stufeZiel = { idx: idx, zurueck: zurueck };
-    G.stufeSel = Math.max(0, BAL.STUFEN_REIHE.indexOf(save.stufe || 'normal'));
-    G.state = 'stufe';
-  }
-
-  function stufeKarte(i) {
-    var cw = 150, gap = 10, x0 = Math.round((W - (3 * cw + 2 * gap)) / 2);
-    return { x: x0 + i * (cw + gap), y: 68, w: cw, h: 166 };
-  }
-
-  function updateStufe() {
-    var In = global.Input, n = BAL.STUFEN_REIHE.length;
-    var tp = In.tap();
-    if (tp) {
-      for (var i = 0; i < n; i++) {
-        if (inRect(tp, stufeKarte(i))) {
-          if (G.stufeSel === i) { stufeStart(); } else { G.stufeSel = i; S.play('move'); }
-          return;
-        }
-      }
-      if (tp.y > H - 40) { G.state = G.stufeZiel.zurueck; S.play('select'); }
-      return;
-    }
-    if (In.hit('left') || In.hit('up')) { G.stufeSel = Math.max(0, G.stufeSel - 1); S.play('move'); }
-    if (In.hit('right') || In.hit('down')) { G.stufeSel = Math.min(n - 1, G.stufeSel + 1); S.play('move'); }
-    if (In.hit('back') || In.hit('pause')) { G.state = G.stufeZiel.zurueck; S.play('select'); return; }
-    if (In.hit('jump') || In.hit('confirm')) stufeStart();
-  }
-
-  function stufeStart() {
-    var st = BAL.STUFEN_REIHE[G.stufeSel];
-    save.stufe = st;
-    persist();
-    BAL.setStufe(st);
-    S.play('select');
-    startGame(G.stufeZiel.idx);
-  }
-
   function activateMenu(it) {
     S.resume();
     S.play('select');
-    if (it.k === 'play') stufeWaehlen(0, 'title');
+    if (it.k === 'play') startGame(0);
     else if (it.k === 'continue') startGame(continueTarget(), true);
     else if (it.k === 'select') { G.state = 'select'; G.selIdx = 0; }
     else if (it.k === 'scores') openScores();
@@ -1470,7 +1161,7 @@
       for (var i = 0; i < max; i++) {
         var cr = cardRect(sc, i);
         if (inRect(tp, { x: cr.x, y: cr.y - 8, w: cr.w, h: cr.h + 8 })) {
-          if (G.selIdx === i) { S.play('select'); stufeWaehlen(i, 'select'); }
+          if (G.selIdx === i) { S.play('select'); startGame(i); }
           else { G.selIdx = i; S.play('move'); }
           return;
         }
@@ -1487,7 +1178,7 @@
       G.selIdx -= sc.perRow; S.play('move');
     }
     if (global.Input.hit('jump') || global.Input.hit('confirm')) {
-      S.play('select'); stufeWaehlen(G.selIdx, 'select');
+      S.play('select'); startGame(G.selIdx);
     }
     if (global.Input.hit('back') || global.Input.hit('pause')) {
       G.state = 'title'; S.play('select');
@@ -1684,7 +1375,13 @@
     if (G.scene) { sceneMod().update(G, W, H); return; }
     if (G.kasse) { global.Kasse.update(G, W, H); return; }
     if (G.eat) { global.Eat.update(G, W, H); return; }
-    if (G.modus && G.modMod.full) { G.modMod.update(G, W, H); return; }
+    if (G.modus && G.modMod.full) {
+      // Der Levelname oben geht auch in den Modulen nach ein paar Sekunden weg
+      // (vorher blieb er in Mustang, Downhill, Rennen, Doener und Pizza stehen)
+      if (G.banner > 0) G.banner--;
+      G.modMod.update(G, W, H);
+      return;
+    }
     // Während eines Dialogs steht die ganze Welt still. Vorher lief
     // Huseyin weiter und hat Yusuf verprügelt, während man nicht
     // steuern konnte — das war der unfairste Bug im Spiel.
@@ -1701,9 +1398,8 @@
     // Fussball (Level 16): Ball und Mitspieler
     if (G.modus && !frozen) G.modMod.update(G, W, H);
 
-    // Level 12: Esat faehrt hinterher, Lennart hat seinen Auftritt
+    // Der Kumpel faehrt/laeuft hinterher (Level 14, 15, 22)
     if (G.rider && !frozen) updateRider(p);
-    if (G.lvl.lennart && !frozen) updateLennart(p);
     // Level 21: Mirkans Auftritt auf der Lichtung (airsoft.js)
     if (G.lvl.mirkanCut && !frozen && global.Airsoft) global.Airsoft.mirkanCut(G, p);
     // Level 25: die Security ist hinter Yusuf her (reise.js)
@@ -1766,6 +1462,16 @@
     if (G.arena && !G.bossStarted && p.cx() > G.arena.x + 56) {
       G.bossStarted = true;
       var bt = G.lvl.bossType;
+      // Kein Gold-Doener im Bosskampf: der laufende ist verdaut, und was
+      // davon noch in der Arena liegt, verschwindet
+      if (p.power > 0) {
+        p.power = 0;
+        G.floats.add(p.cx(), p.y - 20, 'GOLD-DÖNER VERDAUT.', '#ffe38a', 90);
+      }
+      for (var gi = 0; gi < G.items.length; gi++) {
+        var gIt = G.items[gi];
+        if (gIt && gIt.t === 'gold' && gIt.x > G.arena.x - 32) gIt.dead = true;
+      }
       var aTile = Math.floor(G.arena.x / T);
       var groundY = G.lvl.boss.y;
 
@@ -1858,27 +1564,6 @@
       }
     }
 
-    if (G.lvl.driving && !frozen) updateDriving(p);
-
-    // Mirkan faehrt neben Yusuf her und stellt Fragen. Sehr viele.
-    if (G.mirkanTriggers.length && p.cx() > G.mirkanTriggers[0] * T) {
-      G.mirkanTriggers.shift();
-      G.mirkan = { t: 0, qi: (Math.random() * LV.mirkanLines.length) | 0, dur: 520 };
-      S.play('select');
-    }
-    if (G.mirkan) {
-      G.mirkan.t++;
-      if (G.mirkan.t % 105 === 25) {
-        var ml = LV.mirkanLines;
-        G.floats.add(p.cx() + MIRKAN_OFF, p.y - 44, ml[G.mirkan.qi % ml.length], '#b8c0d4', 105);
-        G.mirkan.qi++;
-        S.play('move');
-      }
-      if (G.mirkan.t > G.mirkan.dur) {
-        G.floats.add(p.cx() + MIRKAN_OFF, p.y - 44, 'OKAY. BIS SPÄTER DANN.', '#8f86a8', 90);
-        G.mirkan = null;
-      }
-    }
     // Der Boss bewegt sich im Dialog nicht — nur seine Todesanimation läuft weiter.
     if (G.boss && (!frozen || G.boss.dead)) G.boss.update(G);
 
@@ -1992,7 +1677,7 @@
   /* ================= Bestenliste ================= */
 
   // Nur Zeichen, die die Pixelschrift kennt. Dieselbe Liste prueft auch
-  // der Server (supabase-setup.sql), falls die weltweite Liste aktiv ist.
+  // der Server (docs/supabase-setup.sql), falls die weltweite Liste aktiv ist.
   var NAME_CHARS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZÄÖÜ0123456789-. ';
   var NAME_MAX = 10;
   var SCORE_KEY = 'balci_scores_v2';
@@ -2374,7 +2059,6 @@
 
     if (G.state === 'title') { drawTitle(); }
     else if (G.state === 'select') { drawSelect(); }
-    else if (G.state === 'stufe') { drawStufe(); }
     else if (G.state === 'howto') { drawHowto(); }
     else if (G.state === 'ending') { drawEnding(); }
     else if (G.state === 'nameentry') { drawNameEntry(); }
@@ -2572,10 +2256,14 @@
         rect(x - 8, 146, 20, 5, '#12141c');
         rect(x - 6, 151, 16, 3, '#ffe9a8');      // Licht
       }
-    } else if (theme === 'siedlung') {
-      // Nachmittagssonne ueber einer Reihe Einfamilienhaeuser
-      ctx.fillStyle = '#fff2c0';
-      ctx.beginPath(); ctx.arc(420 - f * 0.05, 58, 20, 0, 6.3); ctx.fill();
+    } else if (theme === 'siedlung' || theme === 'siedlung_nacht') {
+      // Nachmittagssonne (bzw. Mond) ueber einer Reihe Einfamilienhaeuser
+      var nachtS = theme === 'siedlung_nacht';
+      ctx.fillStyle = nachtS ? '#f4e8a0' : '#fff2c0';
+      ctx.beginPath(); ctx.arc(420 - f * 0.05, 58, nachtS ? 16 : 20, 0, 6.3); ctx.fill();
+      if (nachtS) {
+        for (i = 0; i < 40; i++) rect((i * 97 + 13) % W, (i * 53) % 150, 1, 1, i % 4 ? '#c8b8e0' : '#ffe9a8');
+      }
       for (i = -1; i < 12; i++) {
         x = i * 124 - (f % 124);
         var hh = 64 + ((i + 12) % 3) * 16;
@@ -2584,14 +2272,23 @@
         ctx.beginPath();
         ctx.moveTo(x + 2, 251 - hh); ctx.lineTo(x + 58, 216 - hh); ctx.lineTo(x + 114, 251 - hh);
         ctx.closePath(); ctx.fill();
-        for (var wi = 0; wi < 3; wi++) rect(x + 24 + wi * 26, 262 - hh, 12, 12, '#b8c8e0');
+        for (var wi = 0; wi < 3; wi++) {
+          // Nachts: manche Fenster hell, manche dunkel
+          var hell = !nachtS || ((i * 3 + wi * 5 + 12) % 4) < 2;
+          rect(x + 24 + wi * 26, 262 - hh, 12, 12, nachtS ? (hell ? '#ffd88a' : '#161a2c') : '#b8c8e0');
+        }
       }
       for (i = -1; i < 14; i++) {
         x = i * 104 - (n % 104);
-        rect(x, 214, 70, 30, '#4f7e3e');                 // Hecke
-        rect(x, 214, 70, 4, '#6aa04e');
-        rect(x + 84, 186, 6, 60, '#5a3a20');             // Baum
-        ctx.fillStyle = '#3f6e34';
+        rect(x, 214, 70, 30, nachtS ? '#23402a' : '#4f7e3e');   // Hecke
+        rect(x, 214, 70, 4, nachtS ? '#2e5436' : '#6aa04e');
+        rect(x + 84, 186, 6, 60, nachtS ? '#2a1c12' : '#5a3a20');  // Baum
+        if (nachtS) {                                            // Laterne
+          rect(x + 40, 168, 3, 50, '#12141c');
+          rect(x + 34, 164, 15, 4, '#12141c');
+          rect(x + 36, 168, 11, 2, '#ffe9a8');
+        }
+        ctx.fillStyle = nachtS ? '#1f3a24' : '#3f6e34';
         ctx.beginPath(); ctx.arc(x + 87, 180, 20, 0, 6.3); ctx.fill();
       }
     } else if (theme === 'imbiss') {
@@ -2944,8 +2641,7 @@
           }
         }
       } else if (b.type === 'kiste') {
-        // Auf der Strasse sind es Absperrungen statt Kekskisten.
-        P.draw(ctx, G.lvl.driving ? 'sperre' : 'kiste', px, py);
+        P.draw(ctx, 'kiste', px, py);
       } else if (b.type === 'feder') {
         P.draw(ctx, 'feder', px, py);
       }
@@ -3106,49 +2802,6 @@
     if (an && (G.tick >> 4) % 2 === 0) F.draw(ctx, 'Z', px + 10, py - 18, { color: '#cfc0ff' });
   }
 
-  /** Ampel: Mast, Kasten, drei Lichter. Rot leuchtet mit Schein. */
-  function drawAmpeln(camX, camY) {
-    for (var i = 0; i < G.ampeln.length; i++) {
-      var a = G.ampeln[i];
-      var px = Math.round(a.x - camX), gy = 15 * T - camY;
-      if (px < -30 || px > W + 30) continue;
-      var col = ampelColor(a);
-      rect(px + 6, gy - 46, 3, 46, '#3a3a48');
-      rect(px, gy - 74, 15, 30, '#101016');
-      rect(px + 1, gy - 73, 13, 28, '#22222c');
-      var lights = [['rot', '#ff3a30', '#4a1512'], ['gelb', '#ffc23c', '#4a3a12'],
-                    ['gruen', '#4ae05a', '#123a18']];
-      for (var l = 0; l < 3; l++) {
-        var on = (lights[l][0] === col);
-        var ly = gy - 69 + l * 8;
-        if (on) {
-          ctx.globalAlpha = 0.28;
-          rect(px - 3, ly - 3, 21, 11, lights[l][1]);
-          ctx.globalAlpha = 1;
-        }
-        rect(px + 4, ly, 7, 6, on ? lights[l][1] : lights[l][2]);
-      }
-      // Haltelinie auf der Strasse
-      rect(px - 4, gy, 3, 3, col === 'rot' ? '#f4f4ee' : '#8a8a96');
-    }
-  }
-
-  /** Auto samt Fahrer. (cx, feetY) = Mitte unten, s = Vergroesserung. */
-  function drawCar(spr, head, headDX, cx, feetY, flip, s) {
-    var sp = P.get(spr), hs = P.get(head);
-    var left = Math.round(cx - sp.w * s / 2), top = Math.round(feetY - sp.h * s + s);
-    // Manche Autos wissen selbst, wo der Fahrer sitzt (Mirkans Cabrio)
-    var hx = sp.kopf ? sp.kopf[0] : headDX, hy = sp.kopf ? sp.kopf[1] : -7;
-    ctx.save();
-    ctx.translate(left, top);
-    ctx.scale(s, s);
-    // Kopf zuerst, Auto darueber — so schaut der Fahrer aus dem Fenster
-    P.draw(ctx, head, flip ? (sp.w - hx - hs.w) : hx, hy, flip);
-    P.draw(ctx, spr, 0, 0, flip);
-    ctx.restore();
-    return { left: left, top: top, w: sp.w * s };
-  }
-
   /* Nach Alex' Flasche sieht Yusuf alles doppelt und schief.
      Das Bild wackelt, ein zweites halbdurchsichtiges Bild liegt
      versetzt darueber. */
@@ -3231,7 +2884,6 @@
     if (G.lvl.deko === 'haus') drawHaus(camX, camY);
     if (G.lvl.deko === 'fort') drawFort(camX, camY);
     drawCheckpoints(camX, camY);
-    if (G.ampeln.length) drawAmpeln(camX, camY);
     drawSigns(camX, camY);
     drawGoal(camX, camY);
     drawTiles(camX, camY);
@@ -3396,33 +3048,6 @@
       P.draw(ctx, pr.spr, pr.x - camX, pr.y - camY, pr.vx < 0);
     }
 
-    // Die Kolonne faehrt auf der hinteren Spur mit (Level 6)
-    var mp = G.player, BACK = 9;
-    for (i = 0; i < G.convoy.length; i++) {
-      var cv = G.convoy[i];
-      var cr = drawCar(cv.def.spr, cv.def.head, 12, cv.x - camX, cv.y - camY - BACK,
-                       mp.facing < 0, 2);
-      if (cv.t < 360) {
-        F.draw(ctx, cv.def.name, cr.left + cr.w / 2, cr.top - 26,
-               { color: cv.def.col, align: 'center', shadow: true });
-      }
-    }
-
-    // Mirkan faehrt neben Yusuf her und fragt
-    if (G.mirkan) {
-      var sway = Math.sin(G.mirkan.t * 0.07) * 4;
-      var mr = drawCar('mercedes', 'mirkan_head', 13, mp.cx() + MIRKAN_OFF + sway - camX,
-                       mp.feet() - camY - BACK, mp.facing < 0, 2);
-      F.draw(ctx, 'MIRKAN', mr.left + mr.w / 2, mr.top - 26,
-             { color: '#b8c0d4', align: 'center', shadow: true });
-      if (G.tick % 5 === 0) {
-        G.particles.spawn({
-          x: mp.cx() + MIRKAN_OFF - 40 + sway, y: mp.feet() - 14,
-          vx: -0.7, vy: -0.2, life: 22, col: '#8e8880', size: 2, grav: -0.01
-        });
-      }
-    }
-
     if (G.boss) drawBoss(camX, camY);
     // Level 21: Mirkan, sein Mercedes und was davon liegen bleibt
     if (G.lvl.mirkanCut && global.Airsoft) global.Airsoft.mirkanDraw(ctx, G, camX, camY);
@@ -3430,12 +3055,10 @@
     if (global.Spass) global.Spass.drawWelt(ctx, G, camX, camY);
     // Level 25: die Security (und der Hund)
     if (G.jagd && global.Reise) global.Reise.jagdDraw(ctx, G, camX, camY);
-    // Level 12: Lennart (liegend oder im Anflug) und Esat hinter Yusuf
-    if (G.lennartLie) drawLennartLie(G.lennartLie, camX, camY);
+    // Der Kumpel hinter Yusuf (Level 14, 15, 22)
     if (G.rider && G.rider.pos) drawRider(camX, camY);
     drawPlayer(camX, camY);
     if (G.fress) global.Fress.draw(ctx, G, camX, camY);
-    if (G.cut && G.cut.L) drawLennartCut(G.cut, camX, camY);
     drawParticles(camX, camY);
     drawFloats(camX, camY);
     drawTalk(camX, camY);
@@ -3478,6 +3101,21 @@
     rect(x0 + 76, gy - 36, 34, 11, '#e8e4dc');
     rect(x0 + 76, gy - 36, 34, 1, '#ffffff');
     F.draw(ctx, 'BALCI', x0 + 93, gy - 34, { color: '#3a3a44', align: 'center' });
+    // Nachts (Level 11): alles dunkler, oben brennt Licht, ueber der Tuer
+    // eine Lampe
+    if (G.world.theme === 'siedlung_nacht') {
+      ctx.fillStyle = 'rgba(14,12,34,0.55)';
+      ctx.beginPath();
+      ctx.moveTo(x0 - 10, gy - 118); ctx.lineTo(x0 + w / 2, gy - 164); ctx.lineTo(x0 + w + 10, gy - 118);
+      ctx.closePath(); ctx.fill();
+      rect(x0 - 10, gy - 120, w + 20, 120, 'rgba(14,12,34,0.55)');
+      rect(x0 + 22, gy - 99, 22, 21, '#ffd88a');
+      rect(x0 + 22, gy - 99, 22, 3, '#fff0c0');
+      rect(x0 + 49, gy - 60, 14, 5, '#12141c');
+      rect(x0 + 52, gy - 56, 8, 3, '#ffe9a8');
+      ctx.fillStyle = 'rgba(255,220,140,0.10)';
+      ctx.beginPath(); ctx.arc(x0 + 56, gy - 30, 34, 0, 6.3); ctx.fill();
+    }
     // Die sechs Tueten stehen vor der Tuer
     for (var i = 0; i < 6; i++) {
       P.draw(ctx, 'tuete', x0 + 4 + (i % 3) * 11, gy - 9 - Math.floor(i / 3) * 8);
@@ -3617,57 +3255,19 @@
                   pos.x, talking ? 'laugh' : 'normal');
   }
 
-  function drawLennartCut(c, camX, camY) {
-    var L = c.L;
-    if (L.lie) {
-      drawLennartLie({ x: L.x, y: L.y, a: L.a }, camX, camY);
-      return;
-    }
-    drawBikeRider('lennart', 'bike_l', L.x - camX, L.y - camY, false, L.a, L.x, 'normal');
-  }
-
-  /** Lennart liegt auf dem Bauch, daneben die Reste seines Rades. */
-  function drawLennartLie(o, camX, camY) {
-    var i, deb = o.debris || (G.cut && G.cut.debris) || [];
-    for (i = 0; i < deb.length; i++) {
-      var d = deb[i], sp = P.get(d.spr);
-      ctx.save();
-      ctx.translate(Math.round(d.x - camX), Math.round(d.y - camY - sp.h / 2));
-      if (d.a) ctx.rotate(d.a);
-      P.draw(ctx, d.spr, -sp.w / 2, -sp.h / 2);
-      ctx.restore();
-    }
-    var px = Math.round(o.x - camX), py = Math.round(o.y - camY);
-    if (px < -40 || px > W + 40) return;
-    ctx.save();
-    ctx.translate(px, py - 10);
-    ctx.rotate(o.a === undefined ? Math.PI / 2 : o.a);
-    P.draw(ctx, 'lennart', -10, -11);
-    ctx.restore();
-    // Sternchen um den Kopf
-    if ((G.tick >> 3) % 3 !== 0) {
-      var st = G.tick * 0.12;
-      F.draw(ctx, '*', px + 14 + Math.cos(st) * 7, py - 18 + Math.sin(st) * 3, { color: '#ffd257' });
-    }
-  }
-
   /** Sprechblasen ueber den Figuren (ohne das Spiel anzuhalten). */
   function drawTalk(camX, camY) {
     for (var who in G.talk) {
       var s = G.talk[who];
       if (!s || s.t <= 0) continue;
       var x, y, p = G.player;
-      // Hoehen gestaffelt: Esat faehrt direkt hinter Yusuf, und Lennart
-      // liegt beim Vorbeifahren daneben — sonst ueberdecken sich die Blasen.
+      // Hoehen gestaffelt: der Kumpel faehrt direkt hinter Yusuf —
+      // sonst ueberdecken sich die Blasen.
       if (who === 'yusuf') { x = p.cx(); y = p.y - 22; }
       else if (who === (G.lvl.buddy || 'esat') && G.rider && G.rider.pos) {
         x = G.rider.pos.x; y = G.rider.pos.y - (who === 'sonnet' ? 68 : 66);
       }
-      else if (who === 'lennart') {
-        var L = (G.cut && G.cut.L) || G.lennartLie;
-        if (!L) continue;
-        x = L.x; y = L.y - (L.lie || !G.cut ? 26 : 48);
-      } else if (G.wo && G.wo[who]) { x = G.wo[who].x; y = G.wo[who].y; }
+      else if (G.wo && G.wo[who]) { x = G.wo[who].x; y = G.wo[who].y; }
       else continue;
       var sx = Math.round(x - camX), sy = Math.round(y - camY);
       var tw = F.measure(s.text, 1, 1);
@@ -3684,8 +3284,8 @@
       c.karte = [Name, Untertitel] (sonst Lennarts), c.tempo = Streifen. */
   function drawCutFrame(c) {
     var i;
-    // Tempo-Streifen, solange Lennart rast (oder Mirkans Mercedes)
-    if ((c.L && !c.L.lie && c.phase !== 'karte') || c.tempo) {
+    // Tempo-Streifen, solange Mirkans Mercedes rast
+    if (c.tempo) {
       for (i = 0; i < 7; i++) {
         var sy = 40 + ((i * 53 + G.tick * 3) % (H - 80));
         var sx = W - ((G.tick * 22 + i * 97) % (W + 120));
@@ -3705,7 +3305,7 @@
       rect(-W, -30 * k, W * 2, 2, '#ff6fa8');
       rect(-W, 30 * k - 2, W * 2, 2, '#6fc8e8');
       if (c.card > 6) {
-        var kt = c.karte || [LV.lennartCut.card, LV.lennartCut.cardSub];
+        var kt = c.karte || ['', ''];
         F.draw(ctx, kt[0], 0, -20, {
           color: '#ffffff', align: 'center', scale: 4, shadow: true, shadowColor: '#ff6fa8'
         });
@@ -3766,22 +3366,7 @@
     var p = G.player;
     if (p.invuln > 0 && (G.tick >> 1) % 2 === 0 && !p.dead) return;
 
-    // Level 6: Yusuf sitzt im Mustang.
-    if (G.lvl.driving && !p.dead) {
-      // Doppelt so gross wie frueher — die Trefferbox ist entsprechend breit
-      drawCar('mustang', 'y_head', 14, p.cx() - camX, p.feet() - camY, p.facing < 0, 2);
-      // Auspuff
-      if (Math.abs(p.vx) > 1 && G.tick % 3 === 0) {
-        G.particles.spawn({
-          x: p.cx() - p.facing * 42, y: p.feet() - 8,
-          vx: -p.facing * 1.0, vy: -0.25, life: 26,
-          col: '#8e8880', size: 3, grav: -0.01
-        });
-      }
-      return;
-    }
-
-    // Level 12: Yusuf auf dem Fahrrad. Beim Salto dreht sich alles mit.
+    // Auf dem Fahrrad (Level 22). Beim Salto dreht sich alles mit.
     if (G.lvl.bike && !p.dead) {
       var bps = p.pose();
       var bface = p.flipping ? 'laugh' : bps.face;
@@ -3939,6 +3524,7 @@
       var d = b.def;
       var sn = d.spr[b.anim % d.spr.length];
       if (b.felgen) sn = 'mercedes_felgen';        // Mirkans schwarze Felgen
+      if (b.look) sn = b.t + '_' + b.look + (b.anim % 2 ? '2' : '');   // Erfans Formen
       var sp = P.get(sn);
       var sc = b.scale || d.scale;   // Lennart waechst mitten im Kampf
       var dw = sp.w * sc, dh = sp.h * sc;
@@ -3957,6 +3543,8 @@
       }
       ctx.translate(dx0 + (b.facing < 0 ? dw : 0), dy0);
       ctx.scale(b.facing < 0 ? -sc : sc, sc);
+      // Erfan im Samowar-Rausch: der Samowar auf dem Ruecken, hinter ihm
+      if (b.look === 'samowar') P.draw(ctx, 'samowar_ruecken', -5, 12, false);
       // Mirkan sitzt sichtbar am Steuer (Verdeck unten): Kopf zuerst,
       // der Wagen darueber
       if (b.t === 'mirkan') {
@@ -3970,6 +3558,16 @@
       else P.draw(ctx, sn, 0, 0, false);
       ctx.restore();
 
+      // Erfan: Safranstaub bzw. Dampf aus dem Samowar
+      if (b.t === 'erfan' && b.look && !b.dead && G.tick % 5 === 0) {
+        var sam = b.look === 'samowar';
+        G.particles.spawn({
+          x: b.cx() - b.facing * (sam ? 22 : 0) + (Math.random() - 0.5) * 8,
+          y: b.y + (sam ? 8 : 2), vx: (Math.random() - 0.5) * 0.4, vy: -0.7 - Math.random() * 0.5,
+          life: sam ? 34 : 22, col: sam ? '#f4f0ea' : ((G.tick % 10) ? '#ffcf4a' : '#9a5ad8'),
+          size: sam ? 4 : 2, grav: -0.01
+        });
+      }
       // Tuning: Flammen aus dem Auspuff — mit Nitro (letztes Herz) blau
       if (b.t === 'mirkan' && glow && G.tick % 2 === 0) {
         var nitro = b.phase >= 3;
@@ -4341,49 +3939,50 @@
       var bt2 = G.lvl.bossType;
       var isE = (bt2 === 'esat');
       var mini = E.MINIBOSS[bt2];
-      // Der Balken sitzt ganz unten und der Name steht DARIN — sonst
-      // liegt die Schrift mitten im Spielfeld und verdeckt den Gegner.
-      // Am Handy liegen unten die Knoepfe — dort sitzt der Balken oben.
+      // Zwei Zeilen, nichts uebereinander: oben Name, Form und Herzen,
+      // darunter der Balken ohne Schrift. Am PC ganz unten, am Handy oben
+      // (unten liegen dort die Knoepfe).
       var w2 = G.touch ? 190 : 250, x2 = Math.round((W - w2) / 2);
-      var by2 = G.touch ? 8 : H - 20;
-      if (!G.touch) rect(0, by2 - 4, W, 24, 'rgba(8,5,12,0.72)');
-      rect(x2 - 2, by2 - 2, w2 + 4, 16, 'rgba(6,4,10,0.9)');
-      rect(x2, by2, w2, 12, '#241830');
-      var hw = Math.round(w2 * Math.max(0, G.boss.hp) / G.boss.maxHp);
-      // Nach der Verwandlung wechselt der Balken die Farbe und pulsiert
+      var zeile = G.touch ? 5 : H - 28;          // Textzeile
+      var by2 = zeile + 12, bh2 = G.touch ? 7 : 9; // Balken
       var isA = (bt2 === 'alex');
       var barCol = G.boss.rage ? G.boss.rageCol
         : (G.boss.barCol || (mini ? mini.col : (isE ? '#6fc8e8' : (isA ? '#c9a05a' : '#5ec24a'))));
-      if (G.boss.rage && G.boss.phase >= 3 && (G.tick >> 3) % 2 === 0) barCol = '#ffffff';
-      rect(x2, by2, hw, 12, barCol);
-      rect(x2, by2, hw, 2, 'rgba(255,255,255,0.35)');
-      // Ueber dem Balken: die Herzen, die der Boss noch hat (bei jedem
-      // gleich, Semih eins pro Form). Ohne Herzen: Markierung bei der
-      // Haelfte, dort verwandelt er sich.
+      if (G.touch) rect(x2 - 6, 2, w2 + 12, by2 + bh2 + 3, 'rgba(8,5,12,0.78)');
+      else {
+        rect(0, zeile - 4, W, H - zeile + 4, 'rgba(8,5,12,0.8)');
+        rect(0, zeile - 4, W, 1, barCol);
+      }
+      // Balken: Rahmen, Fuellung, Glanzkante. In der letzten Form pulsiert
+      // nur die Glanzkante — kein weisses Blinken mehr.
+      rect(x2 - 1, by2 - 1, w2 + 2, bh2 + 2, '#06040a');
+      rect(x2, by2, w2, bh2, '#241830');
+      var hw = Math.round(w2 * Math.max(0, G.boss.hp) / G.boss.maxHp);
+      rect(x2, by2, hw, bh2, barCol);
+      var glanz = (G.boss.rage && G.boss.phase >= 3 && (G.tick >> 3) % 2 === 0) ? 0.7 : 0.35;
+      rect(x2, by2, hw, 2, 'rgba(255,255,255,' + glanz + ')');
+
+      // Herzen rechts oben (bei jedem Boss gleich, Semih eins pro Form)
+      var hz = P.get('herz'), herzW = 0;
       if (G.boss.lebenMax) {
+        herzW = G.boss.lebenMax * (hz.w + 1) - 1;
         for (var lb = 0; lb < G.boss.lebenMax; lb++) {
           ctx.globalAlpha = lb < G.boss.leben ? 1 : 0.25;
-          P.draw(ctx, 'herz', x2 + lb * 12, by2 - (G.touch ? -30 : 12));
+          P.draw(ctx, 'herz', x2 + w2 - herzW + lb * (hz.w + 1), zeile - 2);
           ctx.globalAlpha = 1;
         }
-      } else if (!G.boss.rage) rect(x2 + Math.floor(w2 / 2), by2, 1, 12, 'rgba(255,255,255,0.6)');
+      } else if (!G.boss.rage) rect(x2 + Math.floor(w2 / 2), by2, 1, bh2, 'rgba(255,255,255,0.6)');
 
       var bname = G.boss.barName ||
                   (mini ? mini.name : (isE ? 'ESAT' : (isA ? 'ALEX' : 'HUSEYIN BALCI')));
-      F.draw(ctx, bname, W / 2, by2 + 3,
-             { color: '#ffffff', align: 'center', shadow: true });
-
+      F.draw(ctx, bname, x2, zeile, { color: '#ffffff', shadow: true });
       var lbl = G.boss.rage ? G.boss.rageName : (G.boss.lebenMax ? (bt2 === 'hamza' ? '1. HALBZEIT' : '1. HERZ') : 'PH 1');
-      var lblCol = G.boss.rage ? G.boss.rageCol : barCol;
-      var openNow = G.boss.open && !G.boss.dead && (G.tick >> 3) % 2 === 0;
-      if (G.touch) {
-        // Oben ist es eng: Zusatzinfos unter den Balken
-        F.draw(ctx, lbl, x2, by2 + 17, { color: lblCol, shadow: true });
-        if (openNow) F.draw(ctx, 'OFFEN', x2 + w2, by2 + 17, { color: '#ffd257', align: 'right', shadow: true });
-      } else {
-        F.draw(ctx, lbl, x2 + w2 + 5, by2 + 3, { color: lblCol });
-        // Offenes Fenster sichtbar machen — der Kampf soll lesbar sein
-        if (openNow) F.draw(ctx, 'OFFEN', x2 - 5, by2 + 3, { color: '#ffd257', align: 'right' });
+      var lblCol = G.boss.rage ? G.boss.rageCol : '#c8b8e0';
+      F.draw(ctx, lbl, x2 + w2 - herzW - (herzW ? 6 : 0), zeile, { color: lblCol, align: 'right', shadow: true });
+      // Offenes Fenster sichtbar machen — der Kampf soll lesbar sein
+      if (G.boss.open && !G.boss.dead && (G.tick >> 3) % 2 === 0) {
+        if (G.touch) F.draw(ctx, 'OFFEN', x2 + w2, by2 + bh2 + 3, { color: '#ffd257', align: 'right', shadow: true });
+        else F.draw(ctx, 'OFFEN', x2 - 6, by2 + 1, { color: '#ffd257', align: 'right' });
       }
     }
   }
@@ -4524,28 +4123,32 @@
   }
 
   /** Standbild mit Namen, schraeg im Bild — wie Lennarts Auftritt. */
+  /** Titelkarte (Boss-Auftritt, Mutation, Ende der Demo): ein gerader
+      Streifen quer durchs Bild, Kinobalken oben und unten. Frueher war der
+      Streifen schraeg — gedrehte Pixelschrift zerfranst aber. */
   function drawKarte(text) {
-    var teile = text.split('|'), k = Math.min(1, (G.dialogT || 0) / 10);
+    var teile = text.split('|'), t = G.dialogT || 0, k = Math.min(1, t / 10);
     var col = teile[2] || '#ff6fa8';
-    ctx.fillStyle = 'rgba(255,140,40,0.14)';
+    ctx.fillStyle = 'rgba(8,5,12,' + (0.35 * k).toFixed(2) + ')';
     ctx.fillRect(0, 0, W, H);
-    var bh = Math.round(26 * k);
-    rect(0, 0, W, bh, '#000000');
-    rect(0, H - bh, W, bh, '#000000');
-    ctx.save();
-    ctx.translate(W / 2, H / 2 - 10);
-    ctx.rotate(-0.08);
-    ctx.fillStyle = 'rgba(10,6,16,0.86)';
-    ctx.fillRect(-W, -30 * k, W * 2, 60 * k);
-    rect(-W, -30 * k, W * 2, 2, col);
-    rect(-W, 30 * k - 2, W * 2, 2, '#6fc8e8');
-    if ((G.dialogT || 0) > 6) {
-      var sc = F.measure(teile[0], 4, 1) > W - 40 ? 3 : 4;
-      F.draw(ctx, teile[0], 0, -20, { color: '#ffffff', align: 'center', scale: sc, shadow: true, shadowColor: col });
-      F.draw(ctx, teile[1] || '', 0, 14, { color: '#6fc8e8', align: 'center' });
+    var kino = Math.round(26 * k);
+    rect(0, 0, W, kino, '#000000');
+    rect(0, H - kino, W, kino, '#000000');
+    var mitte = Math.round(H / 2) - 6, hb = Math.round(32 * k);
+    rect(0, mitte - hb, W, hb * 2, 'rgba(10,6,16,0.94)');
+    if (k >= 1) {
+      rect(0, mitte - hb, W, 2, col);
+      rect(0, mitte + hb - 2, W, 2, col);
     }
-    ctx.restore();
-    if ((G.dialogT || 0) >= 24 && (G.tick >> 3) % 2 === 0) {
+    if (t > 6) {
+      var sc = F.measure(teile[0], 4, 1) > W - 40 ? 3 : 4;
+      // Der Name gleitet kurz von links herein
+      var rein = Math.round(Math.max(0, 1 - (t - 6) / 8) * -30);
+      F.draw(ctx, teile[0], W / 2 + rein, mitte - 5 - 7 * sc / 2 - 3,
+             { color: '#ffffff', align: 'center', scale: sc, shadow: true, shadowColor: '#1a0f24' });
+      F.draw(ctx, teile[1] || '', W / 2, mitte + 12, { color: '#e2dcef', align: 'center', shadow: true });
+    }
+    if (t >= 24 && (G.tick >> 3) % 2 === 0) {
       F.draw(ctx, '|', W - 24, H - 20, { color: '#ffd257' });
     }
   }
@@ -4735,41 +4338,6 @@
   }
 
   /** Schwierigkeitsgrad waehlen: drei Karten nebeneinander. */
-  function drawStufe() {
-    drawSky('zimmer');
-    drawParallax('zimmer', G.tick * 0.2, 0);
-    ctx.fillStyle = 'rgba(8,5,12,0.7)';
-    ctx.fillRect(0, 0, W, H);
-    F.draw(ctx, 'WIE HUNGRIG BIST DU?', W / 2, 20, { color: '#ffd257', align: 'center', scale: 3, shadow: true });
-    F.draw(ctx, G.stufeZiel && G.stufeZiel.idx > 0 ? 'LEVEL ' + (G.stufeZiel.idx + 1) : 'NEUES SPIEL', W / 2, 50,
-           { color: '#c8b8e0', align: 'center' });
-    var gesichter = ['sleep', 'normal', 'growl'];
-    for (var i = 0; i < BAL.STUFEN_REIHE.length; i++) {
-      var st = BAL.STUFEN[BAL.STUFEN_REIHE[i]], k = stufeKarte(i), an = (i === G.stufeSel);
-      var y = k.y + (an ? -6 : 0);
-      rect(k.x, y, k.w, k.h, an ? 'rgba(52,34,20,0.96)' : 'rgba(22,15,30,0.92)');
-      ctx.strokeStyle = an ? '#ffd257' : '#6a5f80';
-      ctx.lineWidth = 2;
-      ctx.strokeRect(k.x + 1, y + 1, k.w - 2, k.h - 2);
-      F.draw(ctx, st.name, k.x + k.w / 2, y + 10, { color: an ? '#ffd257' : '#ffe9a8', align: 'center', scale: 2, shadow: true });
-      P.drawChar(ctx, 'yusuf', k.x + k.w / 2 - 6, y + 70,
-                 { pose: an ? 'cheer' : 'idle', face: gesichter[i], frame: (G.tick >> 3) });
-      var zy = y + 80;
-      for (var t = 0; t < st.text.length; t++) {
-        if (!st.text[t]) continue;
-        var zl = F.wrap(st.text[t], k.w - 12, 1, 1);
-        for (var z = 0; z < zl.length; z++) {
-          F.draw(ctx, zl[z], k.x + k.w / 2, zy, { color: an ? '#ffffff' : '#a094b8', align: 'center' });
-          zy += 10;
-        }
-        zy += 3;
-      }
-    }
-    F.draw(ctx, G.touch ? 'ANTIPPEN = AUSWÄHLEN, NOCHMAL TIPPEN = LOS     UNTEN TIPPEN = ZURÜCK'
-                        : G.hinweis('PFEILE = AUSWÄHLEN     SPRUNG = LOS     ESC = ZURÜCK'), W / 2, H - 22,
-           { color: '#ffd257', align: 'center' });
-  }
-
   function drawSelect() {
     drawSky('festung');
     drawParallax('festung', G.tick * 0.2, 0);
@@ -5009,6 +4577,8 @@
     else if (l.eat) h = 'ESSEN MIT DER MAUS ZU YUSUF ZIEHEN. ODER PFEILE + SPRUNG.';
     else if (l.mode === 'fussball') h = 'SHIFT / E = SCHUSS. REINSPRINGEN = KOPFBALL. STAMPFER = BAUCHSCHUSS.';
     else if (l.mode === 'rennen') h = 'PFEILE = LENKEN. SPRUNG = NITRO. RUNTER = BREMSEN.';
+    else if (l.mode === 'fahrt') h = 'PFEILE = LENKEN. SHIFT = VOLLGAS. RUNTER = BREMSE. SPRUNG = SPRINGEN (ZWEIMAL).';
+    else if (l.mode === 'downhill') h = 'SHIFT = TRETEN. RUNTER = BREMSEN. SPRUNG = HOPSEN, IN DER LUFT SALTO.';
     else if (l.mode === 'doener') h = 'PFEILE + SPRUNG = BELEGEN. RUNTER = WICKELN UND ESSEN.';
     else if (l.mode === 'pizza') h = 'PFEILE + SPRUNG = BELEGEN. RUNTER = OFEN. SPRUNG = RAUSHOLEN.';
     else if (l.mode === 'flug') h = 'SPRUNG = STEIGEN. RUNTER = SINKEN. LINKS / RECHTS = TEMPO.';
@@ -5017,7 +4587,6 @@
     else if (l.bossType === 'semih') h = 'AUF DEN TERLIK SPRINGEN = KONTER. LIEGT ER, STECKT ER ODER TELEFONIERT ER: DRAUF!';
     else if (l.bossType === 'semih2') h = 'DEIN STAMPFER MACHT VOLLEN SCHADEN. KRAFTPROBE: SPRUNG SO SCHNELL DU KANNST.';
     else if (l.bike) h = 'RECHTS = TRETEN, LINKS = BREMSEN. IN DER LUFT SPRUNG = SALTO.';
-    else if (l.driving) h = 'SHIFT = VOLLGAS. BEI ROT BLITZT ES.';
     else if (l.airsoft) h = 'SHIFT / E = BBS. HALTEN = DAUERFEUER. NACHLADEN GEHT VON ALLEIN.';
     else if (l.punch) h = 'SHIFT / E = FAUST. HAUT AUCH KISTEN KAPUTT.';
     if (h && G.touch) {
@@ -5239,7 +4808,7 @@
      Handy einen Startknopf: ein Tippen = Vollbild + Querformat sperren
      (Android) + Ton an. Das iPhone kann im Browser kein echtes Vollbild;
      dort hilft "Zum Home-Bildschirm" — von da startet das Spiel ohne
-     Adressleiste (siehe manifest.webmanifest). */
+     Adressleiste (siehe spiel/manifest.webmanifest). */
   (function mobileStart() {
     var ov = document.getElementById('tapstart');
     var go = document.getElementById('startbtn');

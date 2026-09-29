@@ -3,7 +3,7 @@
    Einstellungen geschrieben werden.
 
    Im Browser: localStorage, wie bisher.
-   In der Desktop-/Steam-Version (Electron, steam/balci-run-steam) stellt
+   In der Desktop-/Steam-Version (Electron, Ordner steam/) stellt
    preload.js ein Objekt window.balciDesktop bereit. Dann kommt jeder
    Schluessel zusaetzlich als eigene Datei in den Benutzerordner des
    Spiels — diesen Ordner synchronisiert Steam Cloud (Auto-Cloud).
@@ -15,7 +15,7 @@
 
   function desktop() { return global.balciDesktop || null; }
 
-  // Die Demo (eigenes Repo, siehe demo/) liegt unter derselben Adresse
+  // Die Demo (eigenes Repo, siehe web-demo/) liegt unter derselben Adresse
   // wie das volle Spiel (esat7070.github.io) — eigener Spielstand, sonst
   // teilen sich beide Fortschritt, Trophaeen und Bestenliste.
   var VOR = global.BALCI_DEMO ? 'demo_' : '';

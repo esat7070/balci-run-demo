@@ -4,7 +4,7 @@
    Hier stehen die Zahlen, an denen man drehen kann, ohne den restlichen
    Code zu verstehen. Die Spieldateien lesen von hier. Nach einer
    Aenderung: Seite neu laden, fertig. Zum Pruefen, ob es besser oder
-   schlechter geworden ist: playtest.html (siehe PLAYTEST_REPORT.md).
+   schlechter geworden ist: tests/playtest.html (siehe docs/PLAYTEST_REPORT.md).
 
    Zeiten sind in Ticks angegeben: 60 Ticks = 1 Sekunde.
    ===================================================================== */
@@ -12,33 +12,26 @@
   'use strict';
 
   var B = {
-    /* Gewaehlter Schwierigkeitsgrad. Setzt das Spiel beim Start
-       ("NEUES SPIEL") und merkt ihn sich im Spielstand. */
+    /* Es gibt nur EINE Schwierigkeit (Esat, 29.09.: wegen der Bestenliste,
+       und das Spiel wird von Level zu Level ohnehin schwerer). Die Tabelle
+       bleibt, damit alle Werte an einer Stelle stehen. Alte Spielstaende
+       mit "leicht" oder "schwer" laufen einfach auf "normal" weiter. */
     stufe: 'normal',
 
-    /* ---------- Schwierigkeitsgrade ----------
+    /* ---------- Die Werte ----------
        herzen        Herzen pro Leben
-       leben         Leben beim Start (und nach NOCHMAL)
-       bossHp        Faktor auf die Energie jedes Bosses
+       leben         Leben (sind alle weg: frische Leben, weiter am Checkpoint)
+       bossHp        Faktor auf die Energie jedes Bosses (1 = wie in BOSS_HP)
        bossPause     Faktor auf die Verschnaufpausen der Bosse (mehr = mehr Zeit)
        gegnerTempo   Faktor auf das Tempo der normalen Gegner
        unverwundbar  so lange blinkt Yusuf nach einem Treffer (Ticks)
        halten        Kraftprobe: Gedrueckthalten reicht statt Haemmern
        bestenliste   kommt ein Durchgang auf dieser Stufe in die Bestenliste? */
     STUFEN: {
-      leicht: { name: 'LEICHT', herzen: 4, leben: 6, bossHp: 0.7, bossPause: 1.35, gegnerTempo: 0.85,
-                unverwundbar: 130, halten: true, bestenliste: false,
-                text: ['4 HERZEN, 6 LEBEN', 'BOSSE MIT WENIGER ENERGIE UND MEHR PAUSEN',
-                       'KRAFTPROBE: GEDRÜCKT HALTEN REICHT', 'NICHT IN DER BESTENLISTE'] },
       normal: { name: 'NORMAL', herzen: 3, leben: 4, bossHp: 1, bossPause: 1, gegnerTempo: 1,
-                unverwundbar: 96, halten: false, bestenliste: true,
-                text: ['3 HERZEN, 4 LEBEN', 'SO IST DAS SPIEL GEDACHT', '', ''] },
-      schwer: { name: 'SCHWER', herzen: 3, leben: 4, bossHp: 1.25, bossPause: 0.8, gegnerTempo: 1.15,
-                unverwundbar: 80, halten: false, bestenliste: true,
-                text: ['3 HERZEN, 4 LEBEN', 'BOSSE MIT MEHR ENERGIE, KÜRZERE PAUSEN',
-                       'SCHNELLERE GEGNER', 'FÜR ALEX. ER HAT 47 PLATIN.'] }
+                unverwundbar: 96, halten: false, bestenliste: true }
     },
-    STUFEN_REIHE: ['leicht', 'normal', 'schwer'],
+    STUFEN_REIHE: ['normal'],
 
     /* ---------- Yusuf ---------- */
     SPIELER: {
