@@ -1030,8 +1030,108 @@
       var t = ctx.currentTime;
       tone({ at: t, wave: 'p25', f0: 820, f1: 560, dur: 0.28, gain: 0.26, vibrato: 11, vibratoDepth: 40 });
       tone({ at: t + 0.3, wave: 'p25', f0: 700, f1: 430, dur: 0.4, gain: 0.24, vibrato: 9, vibratoDepth: 50 });
+    },
+    /* --- Ich-Perspektive (fahrt, downhill, rennen) --- */
+    // Knapp vorbei: Luft reisst, Doppler nach unten
+    whoosh: function () {
+      noise({ filter: 'bandpass', f0: 3200, f1: 500, dur: 0.24, gain: 0.32, q: 1.2 });
+      tone({ wave: 'p125', f0: 900, f1: 340, dur: 0.2, gain: 0.08 });
+    },
+    // Nitro: Zischen und ein Ton, der nach oben schiesst
+    nitro: function () {
+      noise({ filter: 'highpass', f0: 1800, f1: 5200, dur: 0.45, gain: 0.3, q: 0.7 });
+      tone({ wave: 'sawtooth', f0: 110, f1: 330, dur: 0.4, gain: 0.22 });
+    },
+    // Donner: tiefes Grollen, das ausrollt
+    donner: function () {
+      if (!init()) return;
+      var t = ctx.currentTime;
+      noise({ at: t, filter: 'lowpass', f0: 900, f1: 60, dur: 1.4, gain: 0.5, q: 0.5 });
+      noise({ at: t + 0.15, filter: 'lowpass', f0: 400, f1: 50, dur: 1.2, gain: 0.35, q: 0.5 });
+    },
+    // Metall auf Asphalt
+    schaben: function () {
+      noise({ filter: 'highpass', f0: 2600, f1: 1400, dur: 0.18, gain: 0.22, q: 2 });
+      tone({ wave: 'p125', f0: 2200, f1: 1600, dur: 0.12, gain: 0.06 });
+    },
+    // Der Scheibenwischer: wusch
+    wischer: function () {
+      noise({ filter: 'bandpass', f0: 900, f1: 1500, dur: 0.22, gain: 0.12, q: 0.8 });
+    },
+    // Grosse Explosion: tief, breit, mit Nachhall
+    bumm: function () {
+      if (!init()) return;
+      var t = ctx.currentTime;
+      noise({ at: t, filter: 'lowpass', f0: 3200, f1: 70, dur: 0.7, gain: 0.6, q: 0.5 });
+      tone({ at: t, wave: 'sine', f0: 120, f1: 32, dur: 0.6, gain: 0.75 });
+      noise({ at: t + 0.08, filter: 'bandpass', f0: 1200, f1: 200, dur: 0.5, gain: 0.25 });
+    },
+    // Blech: es kracht
+    crash: function () {
+      if (!init()) return;
+      var t = ctx.currentTime;
+      noise({ at: t, filter: 'bandpass', f0: 1800, f1: 300, dur: 0.35, gain: 0.5, q: 0.6 });
+      tone({ at: t, wave: 'sawtooth', f0: 180, f1: 60, dur: 0.3, gain: 0.35 });
+      for (var i = 0; i < 3; i++) noise({ at: t + 0.05 + i * 0.05, filter: 'highpass', f0: 3800 - i * 500, dur: 0.06, gain: 0.16 });
+    },
+    // Salat an der Scheibe
+    klatsch: function () {
+      noise({ filter: 'lowpass', f0: 1400, f1: 300, dur: 0.12, gain: 0.4 });
+      tone({ wave: 'sine', f0: 240, f1: 120, dur: 0.1, gain: 0.3 });
     }
   };
+
+  /* ------------------------- Motor und Fahrtwind -------------------------
+     Ein Dauerton, solange gefahren wird: motor(art, k) bei jedem Schritt
+     aufrufen (k = Tempo 0..1, art 'auto' oder 'rad'). Kommt laenger kein
+     Aufruf (Pause, Menue, Level vorbei), wird er von selbst leise. */
+  var motorN = null, motorZuletzt = -1, motorGestellt = -1;
+  function motor(art, k, extra) {
+    if (!ready || !ctx || ctx.state === 'closed') return;
+    if (!motorN) {
+      var o1 = ctx.createOscillator(), o2 = ctx.createOscillator();
+      var f = ctx.createBiquadFilter(), g = ctx.createGain();
+      o1.type = 'sawtooth';
+      o2.setPeriodicWave(waves.p25);
+      f.type = 'lowpass'; f.frequency.value = 500; f.Q.value = 2.2;
+      g.gain.value = 0.0001;
+      o1.connect(f); o2.connect(f); f.connect(g); g.connect(sfxGain);
+      var wn = ctx.createBufferSource(), wf = ctx.createBiquadFilter(), wg = ctx.createGain();
+      wn.buffer = noiseBuf; wn.loop = true;
+      wf.type = 'bandpass'; wf.frequency.value = 700; wf.Q.value = 0.55;
+      wg.gain.value = 0.0001;
+      wn.connect(wf); wf.connect(wg); wg.connect(sfxGain);
+      o1.start(); o2.start(); wn.start();
+      motorN = { o1: o1, o2: o2, f: f, g: g, wf: wf, wg: wg };
+      setInterval(motorWache, 120);
+    }
+    motorZuletzt = ctx.currentTime;
+    // Nicht oefter als alle 30 ms nachstellen (sonst stapeln sich die Rampen)
+    if (motorGestellt >= 0 && ctx.currentTime - motorGestellt < 0.03) return;
+    motorGestellt = ctx.currentTime;
+    var t = ctx.currentTime, n = motorN, an = muted ? 0 : 1;
+    k = Math.max(0, Math.min(1.4, k || 0));
+    extra = extra || {};
+    if (art === 'auto') {
+      var hz = 38 + k * 92 + (extra.boost ? 24 : 0) + (extra.luft ? 30 : 0);
+      n.o1.frequency.setTargetAtTime(hz, t, 0.06);
+      n.o2.frequency.setTargetAtTime(hz * 0.5, t, 0.06);
+      n.f.frequency.setTargetAtTime(320 + k * 820 + (extra.boost ? 600 : 0), t, 0.08);
+      n.g.gain.setTargetAtTime(Math.max(0.0001, (0.045 + k * 0.05) * an), t, 0.08);
+    } else {
+      n.g.gain.setTargetAtTime(0.0001, t, 0.08);
+    }
+    n.wf.frequency.setTargetAtTime(420 + k * 1500, t, 0.1);
+    n.wg.gain.setTargetAtTime(Math.max(0.0001, (0.01 + k * k * (art === 'rad' ? 0.11 : 0.06)) * an), t, 0.1);
+  }
+  function motorWache() {
+    if (!motorN || !ctx) return;
+    if (ctx.currentTime - motorZuletzt > 0.25 || muted) {
+      motorN.g.gain.setTargetAtTime(0.0001, ctx.currentTime, 0.06);
+      motorN.wg.gain.setTargetAtTime(0.0001, ctx.currentTime, 0.06);
+      motorGestellt = -1;
+    }
+  }
 
   function play(name, arg) {
     if (!ready) { if (!init()) return; }
@@ -1053,6 +1153,7 @@
     play: play,
     music: playMusic,
     stopMusic: stopMusic,
+    motor: motor,
     isMuted: function () { return muted; },
     setMuted: setMuted,
     /** Musik und Effekte getrennt, je 0..1 (Einstellungen). */

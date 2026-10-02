@@ -212,8 +212,9 @@
     function toCanvas(cx, cy) {
       var r = canvas.getBoundingClientRect();
       if (!r.width || !r.height) return null;
-      return { x: (cx - r.left) / r.width * canvas.width,
-               y: (cy - r.top) / r.height * canvas.height };
+      // In Spiel-Pixeln: die Leinwand ist feiner (licht.js), das Spiel nicht
+      return { x: (cx - r.left) / r.width * (canvas.logischW || canvas.width),
+               y: (cy - r.top) / r.height * (canvas.logischH || canvas.height) };
     }
     function move(e) {
       var p = toCanvas(e.clientX, e.clientY);
@@ -256,8 +257,8 @@
       var r = canvas.getBoundingClientRect();
       if (!r.width || !r.height) return;
       tapPos = {
-        x: (cx - r.left) / r.width * canvas.width,
-        y: (cy - r.top) / r.height * canvas.height
+        x: (cx - r.left) / r.width * (canvas.logischW || canvas.width),
+        y: (cy - r.top) / r.height * (canvas.logischH || canvas.height)
       };
       tapOn.confirm++; recompute('confirm');
       setTimeout(function () { tapOn.confirm = Math.max(0, tapOn.confirm - 1); recompute('confirm'); }, 60);

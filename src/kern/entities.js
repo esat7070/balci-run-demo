@@ -814,7 +814,8 @@
         if (b.count <= 0) b.used = true;
       }
     }
-    // Schockwelle
+    // Schockwelle (und eine sichtbare Druckwelle am Boden, ebenen.js)
+    if (g.einschlag) g.einschlag(this.cx(), this.feet(), 'stampfer');
     for (var i = 0; i < g.enemies.length; i++) {
       var e = g.enemies[i];
       if (e.dead) continue;
@@ -912,6 +913,7 @@
     }
 
     this.hp -= dmg;
+    if (g.einschlag) g.einschlag(this.cx(), this.y + this.h / 2, 'aua');
     this.invuln = global.Balance.s('unverwundbar');
     this.hurtTimer = 40;
     this.sleeping = false;

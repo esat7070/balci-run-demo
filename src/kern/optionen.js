@@ -4,6 +4,8 @@
      MUSIK / EFFEKTE     getrennt, in zehn Stufen
      VOLLBILD            Browser: Vollbild-API, Desktop: Fenster (preload.js)
      SKALIERUNG          AUTOMATISCH / SCHARF (nur ganze Pixel) / FUELLEN
+     GRAFIK              AUTOMATISCH (schaltet herunter, wenn es ruckelt) /
+                         HOCH (immer alle Effekte) / SPARSAM (einfache Aufloesung)
      BILDSCHIRMWACKELN   aus = kein Wackeln bei Treffern und Explosionen
      BLITZE              aus = keine weissen Blitze ueber dem ganzen Bild
      TASTENBELEGUNG      eigene Tasten (input.js); Controller: Steam Input
@@ -23,8 +25,10 @@
   var KEY = 'balci_optionen';
   var SKALEN = ['auto', 'scharf', 'fuellen'];
   var SKALEN_NAME = { auto: 'AUTOMATISCH', scharf: 'SCHARF (GANZE PIXEL)', fuellen: 'FÜLLEN' };
+  var GRAFIKEN = ['auto', 'hoch', 'sparsam'];
+  var GRAFIK_NAME = { auto: 'AUTOMATISCH', hoch: 'HOCH', sparsam: 'SPARSAM' };
 
-  var w = { musik: 8, effekte: 8, wackeln: true, blitze: true, skalierung: 'auto', tasten: {} };
+  var w = { musik: 8, effekte: 8, wackeln: true, blitze: true, skalierung: 'auto', grafik: 'auto', tasten: {} };
 
   /* ---------- Laden, Speichern, Anwenden ---------- */
 
@@ -38,6 +42,7 @@
       w.wackeln = o.wackeln !== false;
       w.blitze = o.blitze !== false;
       w.skalierung = SKALEN.indexOf(o.skalierung) >= 0 ? o.skalierung : 'auto';
+      w.grafik = GRAFIKEN.indexOf(o.grafik) >= 0 ? o.grafik : 'auto';
       w.tasten = (o.tasten && typeof o.tasten === 'object') ? o.tasten : {};
     }
     anwenden();
@@ -96,6 +101,7 @@
     ];
     if (kannVollbild()) l.push({ k: 'vollbild', label: 'VOLLBILD', wert: istVollbild() ? 'AN' : 'AUS' });
     if (!G.touch) l.push({ k: 'skalierung', label: 'SKALIERUNG', wert: SKALEN_NAME[w.skalierung] });
+    l.push({ k: 'grafik', label: 'GRAFIK', wert: GRAFIK_NAME[w.grafik] });
     l.push({ k: 'wackeln', label: 'BILDSCHIRMWACKELN', wert: w.wackeln ? 'AN' : 'AUS' });
     l.push({ k: 'blitze', label: 'BLITZE', wert: w.blitze ? 'AN' : 'AUS' });
     if (!G.touch) l.push({ k: 'tasten', label: 'TASTENBELEGUNG', wert: '>' });
@@ -139,6 +145,15 @@
       i = (i + (dir < 0 ? SKALEN.length - 1 : 1)) % SKALEN.length;
       w.skalierung = SKALEN[i];
       if (G.onSkalierung) G.onSkalierung();
+      S().play('move');
+    } else if (k === 'grafik') {
+      var gi = GRAFIKEN.indexOf(w.grafik);
+      gi = (gi + (dir < 0 ? GRAFIKEN.length - 1 : 1)) % GRAFIKEN.length;
+      w.grafik = GRAFIKEN[gi];
+      // Neue Aufloesung sofort (game.js rechnet die Render-Skala neu aus)
+      if (G.onSkalierung) G.onSkalierung();
+      G.optHinweis = w.grafik === 'sparsam' ? 'EINFACHE AUFLÖSUNG, WENIGER EFFEKTE.' :
+                     w.grafik === 'hoch' ? 'ALLE EFFEKTE, IMMER.' : 'ALLE EFFEKTE. RUCKELT ES, WIRD GESPART.';
       S().play('move');
     } else if (k === 'wackeln' || k === 'blitze') {
       w[k] = !w[k];
@@ -187,7 +202,7 @@
           G.optSel = i;
           // Bei Balken und Auswahl: links vom Wert = weniger, rechts = mehr
           var wx = tp.x > (G.optMitte || 0) ? 1 : -1;
-          aendern(G, l[i], (l[i].k === 'musik' || l[i].k === 'effekte' || l[i].k === 'skalierung') ? wx : 0);
+          aendern(G, l[i], (l[i].k === 'musik' || l[i].k === 'effekte' || l[i].k === 'skalierung' || l[i].k === 'grafik') ? wx : 0);
           return;
         }
       }
@@ -255,6 +270,7 @@
     wackeln: function () { return w.wackeln; },
     blitze: function () { return w.blitze; },
     skalierung: function () { return w.skalierung; },
+    grafik: function () { return w.grafik; },
     kannVollbild: kannVollbild,
     istVollbild: istVollbild,
     setVollbild: setVollbild,

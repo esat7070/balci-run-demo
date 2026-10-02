@@ -5,6 +5,10 @@
   'use strict';
 
   var W = 512, H = 288, T = 16;
+  // Render-Skala (licht.js): das Spiel rechnet in 512x288, gezeichnet wird
+  // RS-mal feiner. Pixel-Figuren bleiben scharf, Licht und Nebel werden weich.
+  var RS = 1;
+  var LI = global.Licht, EB = global.Ebenen;
   var P = global.Pixel, F = global.Font, S = global.Sound;
   var E = global.Ent, LV = global.Levels, SP = global.Sprites;
   var BAL = global.Balance;   // alle Stellschrauben (balance.js)
@@ -533,8 +537,16 @@
   /* ================= Callbacks aus entities.js ================= */
 
   // Aus entities.js: Gegner erledigt, Boss getroffen, Goldhonig, Yusuf liegt
-  G.onEnemyKill = function (e) { if (global.Spass) global.Spass.gegnerWeg(G, e); };
-  G.onBossHit = function (b, dmg) { if (global.Spass) global.Spass.bossTreffer(G, b, dmg); };
+  G.onEnemyKill = function (e) {
+    if (global.Spass) global.Spass.gegnerWeg(G, e);
+    if (EB && e) EB.einschlag(G, e.x + e.w / 2, e.y + e.h / 2, 'gegner');
+  };
+  G.onBossHit = function (b, dmg) {
+    if (global.Spass) global.Spass.bossTreffer(G, b, dmg);
+    if (EB && b) EB.einschlag(G, b.x + b.w / 2, b.y + b.h * 0.4, 'boss');
+  };
+  /** Sichtbarer Einschlag (ebenen.js): Stampfer, Treffer an Yusuf. */
+  G.einschlag = function (x, y, art) { if (EB) EB.einschlag(G, x, y, art); };
   G.onGold = function () { if (global.Spass) global.Spass.gold(G); };
   G.onKill = function (fell) { if (global.Spass) global.Spass.tod(G, fell); };
 
@@ -625,6 +637,7 @@
     G.shake(10, 30);
     S.play('win');
     if (b) {
+      if (EB) EB.einschlag(G, b.cx(), b.y + b.h / 2, 'sieg');
       G.particles.burst(b.cx(), b.y + b.h / 2, 60, { col: '#ffd257', spread: 5, up: 2, life: 70, grav: 0.1 });
       G.particles.burst(b.cx(), b.y + b.h / 2, 30, { col: '#ffffff', spread: 4, up: 1.5, life: 50, grav: 0.1 });
     }
@@ -2054,6 +2067,10 @@
 
   function render() {
     applyView();
+    ctx.setTransform(RS, 0, 0, RS, 0, 0);
+    ctx.globalAlpha = 1;
+    ctx.globalCompositeOperation = 'source-over';
+    ctx.imageSmoothingEnabled = false;
     ctx.save();
     ctx.clearRect(0, 0, W, H);
 
@@ -2105,6 +2122,43 @@
 
   /* ---------- Hintergrund ---------- */
 
+  /** So weit kann die Kamera nach unten (der Boden des Levels). */
+  function maxCamY() { return G.lvl ? Math.max(0, G.lvl.h * T - H + BOTTOM_PAD) : 0; }
+
+  /** Himmel und Hintergrund zeichnen (malen = die eigentlichen Ebenen).
+      Bei voller Grafik in Spiel-Aufloesung und weich vergroessert: der
+      Hintergrund ist unscharf wie hinter einer Kamera-Linse, das Spielfeld
+      davor gestochen scharf. Faehrt die Kamera hoch, wandert er langsamer
+      mit als die Welt (Parallaxe auch nach oben). */
+  function hintergrund(theme, camX, camY, maxY, malen) {
+    var dy = Math.round(Math.min(40, Math.max(0, (maxY - camY) * 0.14)) * RS) / RS;
+    var weich = LI && LI.stufe() >= 2 && RS > 1;
+    if (weich) {
+      var bg = LI.puffer('hintergrund', W, H), haupt = ctx;
+      ctx = bg.getContext('2d');
+      ctx.setTransform(1, 0, 0, 1, 0, 0);
+      ctx.globalAlpha = 1;
+      ctx.globalCompositeOperation = 'source-over';
+      ctx.imageSmoothingEnabled = false;
+      try { malen(); } finally { ctx = haupt; }
+      ctx.imageSmoothingEnabled = true;
+      ctx.drawImage(bg, 0, dy, W, H);
+      if (dy > 0) ctx.drawImage(bg, 0, 0, W, 1, 0, 0, W, dy + 0.5);
+      ctx.imageSmoothingEnabled = false;
+    } else {
+      ctx.save();
+      ctx.translate(0, dy);
+      malen();
+      ctx.restore();
+      var t = SP.THEMES[theme];
+      if (dy > 0 && t) rect(0, 0, W, dy + 1, t.sky[0]);
+    }
+  }
+
+  /** Lichtschein im Hintergrund (Laternen, Mond, Neon, Flutlicht). */
+  function bgLicht(x, y, r, col, a) { if (LI && LI.stufe() >= 1) LI.glow(ctx, x, y, r, col, a); }
+  function bgKegel(x1, y1, w1, x2, y2, w2, col, a) { if (LI && LI.stufe() >= 1) LI.kegel(ctx, x1, y1, w1, x2, y2, w2, col, a); }
+
   function drawSky(theme) {
     var t = SP.THEMES[theme];
     var grd = ctx.createLinearGradient(0, 0, 0, H);
@@ -2136,6 +2190,8 @@
       ctx.beginPath(); ctx.arc(446 - f * 0.06, 54, 17, 0, 6.3); ctx.fill();
       ctx.fillStyle = SP.THEMES.zimmer.sky[1];
       ctx.beginPath(); ctx.arc(440 - f * 0.06, 49, 15, 0, 6.3); ctx.fill();
+      bgLicht(446 - f * 0.06, 54, 70, '#ffe0b0', 0.3);
+      bgLicht(W * 0.62 - f * 0.03, 236, 230, '#f0a05c', 0.28);   // die Sonne kommt gleich
       for (i = -1; i < 14; i++) {
         x = i * 112 - (f % 112);
         rect(x, 150, 74, 140, t.far);
@@ -2155,6 +2211,7 @@
         x = i * 96 - (f % 96);
         rect(x + 16, 0, 60, 5, '#ffffff');
         rect(x + 22, 5, 48, 3, 'rgba(255,255,255,0.4)');
+        bgLicht(x + 46, 4, 36, '#f4fbff', 0.22);
       }
       // Regalreihen hinter dem Spielfeld, voll mit bunten Packungen
       var PROD = ['#e0483c', '#ffd257', '#4aa832', '#5c7fd8', '#ff8a2a',
@@ -2175,6 +2232,7 @@
     } else if (theme === 'garten') {
       ctx.fillStyle = '#fff6b0';
       ctx.beginPath(); ctx.arc(76, 46, 22, 0, 6.3); ctx.fill();
+      bgLicht(76, 46, 110, '#fff6b0', 0.3);
       for (i = -1; i < 10; i++) {
         x = i * 150 - (f % 150);
         ctx.fillStyle = t.far;
@@ -2206,6 +2264,7 @@
         F.draw(ctx, 'PAIN', x + 46, 120, { color: '#ff6fa8', align: 'center' });
         F.draw(ctx, 'NO', x + 46, 132, { color: '#ff6fa8', align: 'center' });
         F.draw(ctx, 'GAIN', x + 46, 144, { color: '#ff6fa8', align: 'center' });
+        bgLicht(x + 46, 128, 48, '#ff6fa8', 0.22);
         P.draw(ctx, 'hantel', x + 110, 150);
       }
     } else if (theme === 'kueche') {
@@ -2238,6 +2297,7 @@
       // Naechtliche Stadt, Neon, Strassenlaternen
       ctx.fillStyle = '#f4e8a0';
       ctx.beginPath(); ctx.arc(92, 44, 14, 0, 6.3); ctx.fill();
+      bgLicht(92, 44, 64, '#f4e8a0', 0.3);
       for (i = -1; i < 16; i++) {
         x = i * 88 - (f % 88);
         var bh2 = 60 + ((i * 37) % 5) * 26;
@@ -2255,12 +2315,15 @@
         rect(x, 150, 4, 140, '#12141c');         // Laternenmast
         rect(x - 8, 146, 20, 5, '#12141c');
         rect(x - 6, 151, 16, 3, '#ffe9a8');      // Licht
+        bgKegel(x + 2, 154, 14, x + 2, 290, 84, '#ffe9a8', 0.13);
+        bgLicht(x + 2, 152, 26, '#ffe9a8', 0.55);
       }
     } else if (theme === 'siedlung' || theme === 'siedlung_nacht') {
       // Nachmittagssonne (bzw. Mond) ueber einer Reihe Einfamilienhaeuser
       var nachtS = theme === 'siedlung_nacht';
       ctx.fillStyle = nachtS ? '#f4e8a0' : '#fff2c0';
       ctx.beginPath(); ctx.arc(420 - f * 0.05, 58, nachtS ? 16 : 20, 0, 6.3); ctx.fill();
+      bgLicht(420 - f * 0.05, 58, nachtS ? 64 : 100, nachtS ? '#f4e8a0' : '#fff2c0', nachtS ? 0.3 : 0.3);
       if (nachtS) {
         for (i = 0; i < 40; i++) rect((i * 97 + 13) % W, (i * 53) % 150, 1, 1, i % 4 ? '#c8b8e0' : '#ffe9a8');
       }
@@ -2287,6 +2350,8 @@
           rect(x + 40, 168, 3, 50, '#12141c');
           rect(x + 34, 164, 15, 4, '#12141c');
           rect(x + 36, 168, 11, 2, '#ffe9a8');
+          bgKegel(x + 41, 170, 10, x + 41, 248, 62, '#ffe9a8', 0.12);
+          bgLicht(x + 41, 169, 22, '#ffe9a8', 0.55);
         }
         ctx.fillStyle = nachtS ? '#1f3a24' : '#3f6e34';
         ctx.beginPath(); ctx.arc(x + 87, 180, 20, 0, 6.3); ctx.fill();
@@ -2308,6 +2373,7 @@
           rect(x + 42 - sw / 2, 76 + sy, sw, 3, so < 2 ? '#b8643a' : '#8a4424');
         }
         rect(x + 41, 66, 2, 130, '#c8ccd6');
+        bgLicht(x + 42, 135, 64, '#ff8a2a', 0.3);
         rect(x + 90, 70, 96, 50, '#1a1210');            // Karte
         F.draw(ctx, 'SHAWARMA', x + 98, 78, { color: '#ffd257' });
         F.draw(ctx, 'FALAFEL', x + 98, 92, { color: '#ffe9a8' });
@@ -2326,6 +2392,7 @@
         x = i * 170 - (f % 170);
         var pulse2 = ((G.tick + i * 40) % 140) < 5 ? '#ffd8f0' : '#ff8ad8';
         F.draw(ctx, i % 2 ? 'SHISHA' : 'STILBRUCH', x + 60, 40, { color: pulse2, align: 'center', scale: 2 });
+        bgLicht(x + 60, 46, 60, pulse2, 0.26);
         rect(x + 10, 36, 100, 1, 'rgba(255,138,216,0.3)');
       }
       for (i = -1; i < 14; i++) {
@@ -2354,6 +2421,7 @@
         rect(x + 34, 74, 56, 72, '#6ab0e8');             // Himmel
         rect(x + 34, 118, 56, 28, '#2a6ab8');            // Meer
         rect(x + 60, 74, 4, 72, t.near);
+        bgLicht(x + 62, 104, 54, '#eaf6ff', 0.2);
         rect(x + 120, 170, 18, 40, '#c87a4a');           // Amphore
         rect(x + 116, 176, 26, 26, '#b8683a');
         rect(x + 124, 164, 10, 8, '#c87a4a');
@@ -2370,6 +2438,8 @@
         rect(x + 100, 30, 6, 140, '#8a8e98');
         rect(x + 86, 24, 34, 12, '#c8ccd4');
         for (var fl = 0; fl < 4; fl++) rect(x + 89 + fl * 8, 27, 5, 6, '#fff8d8');
+        bgKegel(x + 103, 36, 30, x + 70, 290, 230, '#fff8d8', 0.05);
+        bgLicht(x + 103, 30, 46, '#fff8d8', 0.4);
       }
       for (i = -1; i < 10; i++) {
         x = i * 160 - (n * 0.6 % 160);
@@ -2412,6 +2482,7 @@
         rect(x, 130, 140, 4, '#5a5e68');
         F.draw(ctx, 'BLOCK ' + String.fromCharCode(65 + ((i % 6) + 6) % 6), x + 70, 140, { color: '#f07a28', align: 'center' });
       }
+      bgLicht(W / 2, 0, 44, '#fff8d8', 0.4);
       var sw = Math.sin(G.tick * 0.012) * 180 + W / 2;
       ctx.globalAlpha = 0.08;
       ctx.fillStyle = '#fff8d8';
@@ -2421,6 +2492,7 @@
       // Morgens am Hausberg: ferne Gipfel mit Schnee, davor Tannen
       ctx.fillStyle = '#fff6c8';
       ctx.beginPath(); ctx.arc(86, 48, 18, 0, 6.3); ctx.fill();
+      bgLicht(86, 48, 100, '#fff6c8', 0.3);
       for (i = -1; i < 9; i++) {
         x = i * 190 - (f * 0.6 % 190);
         var peak = 70 + ((i + 10) % 2) * 34;
@@ -2523,6 +2595,7 @@
         rect(x + 48, 162, 38, 60, '#4f7a33');
         rect(x + 52, 170, 30, 8, '#9dff6a');
         rect(x + 52, 186, 30, 8, '#9dff6a');
+        bgLicht(x + 67, 182, 34, '#9dff6a', 0.24);
       }
       if ((G.tick % 190) < 5) {
         ctx.fillStyle = 'rgba(200,255,180,0.14)';
@@ -2821,7 +2894,7 @@
     // (Die Szene ein zweites Mal zu zeichnen hat das Leuchten der Bosse
     // doppelt aufgetragen — Alex war dann nur noch ein oranger Fleck.)
     ctx.globalAlpha = 0.25;
-    ctx.drawImage(canvas, Math.round(Math.sin(dt * 1.3) * 6), Math.round(Math.cos(dt) * 4));
+    ctx.drawImage(canvas, Math.round(Math.sin(dt * 1.3) * 6), Math.round(Math.cos(dt) * 4), W, H);
     ctx.globalAlpha = 1;
     ctx.fillStyle = G.drunk ? 'rgba(255,150,60,0.07)' : 'rgba(120,230,110,0.09)';
     ctx.fillRect(0, 0, W, H);
@@ -2866,20 +2939,25 @@
       return;
     }
     var camX = Math.round(G.cam.x + G.cam.sx), camY = Math.round(G.cam.y + G.cam.sy);
-    drawSky(G.world.theme);
-    // Der Hintergrund ist fuer 288 Pixel Hoehe gezeichnet. In der
-    // naeheren Handy-Ansicht wird er mit dem Boden nach oben geschoben.
-    ctx.save();
-    if (H < 288) ctx.translate(0, H - 288 - BOTTOM_PAD);
-    // Level 22: am Ende des Waldwegs taucht die Stadt auf
-    var stadt = G.lvl.stadtAb ? Math.max(0, Math.min(1, (camX + W / 2 - G.lvl.stadtAb * T) / 480)) : 0;
-    if (stadt < 1) drawParallax(G.world.theme, camX, camY);
-    if (stadt > 0) {
-      ctx.globalAlpha = stadt;
-      drawParallax('siedlung', camX, camY);
-      ctx.globalAlpha = 1;
-    }
-    ctx.restore();
+    var theme = G.world.theme, maxY = maxCamY();
+    hintergrund(theme, camX, camY, maxY, function () {
+      drawSky(theme);
+      // Der Hintergrund ist fuer 288 Pixel Hoehe gezeichnet. In der
+      // naeheren Handy-Ansicht wird er mit dem Boden nach oben geschoben.
+      ctx.save();
+      if (H < 288) ctx.translate(0, H - 288 - BOTTOM_PAD);
+      // Level 22: am Ende des Waldwegs taucht die Stadt auf
+      var stadt = G.lvl.stadtAb ? Math.max(0, Math.min(1, (camX + W / 2 - G.lvl.stadtAb * T) / 480)) : 0;
+      if (stadt < 1) drawParallax(theme, camX, camY);
+      if (stadt > 0) {
+        ctx.globalAlpha = stadt;
+        drawParallax('siedlung', camX, camY);
+        ctx.globalAlpha = 1;
+      }
+      ctx.restore();
+    });
+    // Ebenen wie bei Hollow Knight: Dunst, Nebel am Boden, Teilchen hinten
+    if (EB) EB.hinten(ctx, G, theme, camX, camY, W, H);
 
     if (G.lvl.deko === 'haus') drawHaus(camX, camY);
     if (G.lvl.deko === 'fort') drawFort(camX, camY);
@@ -2891,6 +2969,8 @@
     drawBlocks(camX, camY);
     drawMovers(camX, camY);
     if (G.world.kickers.length) drawKickers(camX, camY);
+    // Bloom jetzt einfangen: Hintergrund, Lampen, Kacheln — noch ohne Figuren
+    if (EB) EB.bloomFangen(canvas, theme, W, H);
 
     var i;
     for (i = 0; i < G.items.length; i++) {
@@ -3063,13 +3143,19 @@
     drawFloats(camX, camY);
     drawTalk(camX, camY);
 
-    // leichte Abdunklung an den Rändern
-    var vg = ctx.createLinearGradient(0, 0, 0, H);
-    vg.addColorStop(0, 'rgba(0,0,0,0.20)');
-    vg.addColorStop(0.3, 'rgba(0,0,0,0)');
-    vg.addColorStop(1, 'rgba(0,0,0,0.22)');
-    ctx.fillStyle = vg;
-    ctx.fillRect(0, 0, W, H);
+    if (EB) {
+      // Vorne: Licht, Strahlen, Teilchen, Silhouetten; dann Bloom, Farbe, Vignette
+      EB.vorne(ctx, G, theme, camX, camY, W, H, { maxY: maxY });
+      EB.nachher(ctx, theme, canvas, W, H);
+    } else {
+      // leichte Abdunklung an den Rändern
+      var vg = ctx.createLinearGradient(0, 0, 0, H);
+      vg.addColorStop(0, 'rgba(0,0,0,0.20)');
+      vg.addColorStop(0.3, 'rgba(0,0,0,0)');
+      vg.addColorStop(1, 'rgba(0,0,0,0.22)');
+      ctx.fillStyle = vg;
+      ctx.fillRect(0, 0, W, H);
+    }
 
     if (G.cut) drawCutFrame(G.cut);
     if (G.banner > 0) drawBanner();
@@ -3823,8 +3909,11 @@
     }
   }
 
+  // Funken in diesen Farben leuchten (Honig, Gold, Glut, Leuchtspur)
+  var LEUCHTEN = { '#ffe38a': 1, '#ffd257': 1, '#ffc23c': 1, '#ff8a2a': 1, '#ffb43c': 1, '#fff0a0': 1,
+                   '#ffcf4a': 1, '#c8ff6a': 1, '#8ae0ff': 1, '#ffe9a8': 1 };
   function drawParticles(camX, camY) {
-    var l = G.particles.list;
+    var l = G.particles.list, hell = LI && LI.stufe() >= 1;
     for (var i = 0; i < l.length; i++) {
       var p = l[i];
       var a = Math.min(1, p.life / (p.max * 0.6));
@@ -3833,6 +3922,7 @@
         F.draw(ctx, p.text, p.x - camX, p.y - camY, { color: p.col });
       } else {
         var s = p.shrink ? Math.max(1, Math.round(p.size * a)) : p.size;
+        if (hell && LEUCHTEN[p.col]) LI.glow(ctx, p.x - camX, p.y - camY, s * 3.2, p.col, 0.4);
         rect(p.x - camX - s / 2, p.y - camY - s / 2, s, s, p.col);
       }
       ctx.globalAlpha = 1;
@@ -3855,6 +3945,17 @@
 
   function drawHUD() {
     var p = G.player;
+    // Weicher Schatten hinter der Anzeige: lesbar auch vor hellem Himmel,
+    // Sonne und Lichtschein (die Ebenen machen den Hintergrund heller)
+    if (LI) {
+      var smH = ctx.imageSmoothingEnabled;
+      ctx.imageSmoothingEnabled = true;
+      ctx.globalAlpha = 0.38;
+      ctx.drawImage(LI.glowBild('#06040c', true), -80, -70, 300, 190);
+      ctx.drawImage(LI.glowBild('#06040c', true), W - 190, -60, 270, 160);
+      ctx.globalAlpha = 1;
+      ctx.imageSmoothingEnabled = smH;
+    }
     // Herzen
     for (var i = 0; i < p.maxHp; i++) {
       var hx = 8 + i * 13, hy = 8;
@@ -4251,9 +4352,10 @@
   /* ---------- Menüs / Overlays ---------- */
 
   function drawTitle() {
-    // Hintergrund: Küche bei Sonnenaufgang
-    drawSky('zimmer');
-    drawParallax('zimmer', G.tick * 0.28, 0);
+    // Hintergrund: Yusufs Zimmer bei Sonnenaufgang — mit allen Ebenen
+    var tcx = G.tick * 0.28;
+    hintergrund('zimmer', tcx, 0, 0, function () { drawSky('zimmer'); drawParallax('zimmer', tcx, 0); });
+    if (EB) EB.hinten(ctx, G, 'zimmer', tcx, 0, W, H);
 
     // Boden
     for (var tx = 0; tx <= W / 16; tx++) {
@@ -4270,6 +4372,7 @@
     // schwebende Honiggläser
     for (var i = 0; i < 5; i++) {
       var hx = 40 + i * 108, hy = 126 + Math.sin(G.tick * 0.04 + i) * 8;
+      if (LI) LI.glow(ctx, hx + 7, hy + 8, 22, '#ffb43c', 0.32);
       P.draw(ctx, 'honig', hx, hy);
     }
 
@@ -4284,6 +4387,12 @@
     if (global.BALCI_DEMO) {
       F.draw(ctx, 'DEMO', W / 2 + F.measure('BALCI RUN', 5, 1) / 2 + 32, 56,
              { color: '#ff6a6a', align: 'center', scale: 2, shadow: true });
+    }
+    // Vorne: Staub im Morgenlicht, Silhouetten, Bloom (das Logo glueht), Vignette.
+    // Menue und Bestenliste kommen danach: die bleiben klar lesbar.
+    if (EB) {
+      EB.vorne(ctx, G, 'zimmer', tcx, 0, W, H, { ohneSpielfeld: true, ohneOben: true });
+      EB.nachher(ctx, 'zimmer', canvas, W, H, { vignFaktor: 0.85 });
     }
 
     var items = menuItems();
@@ -4339,10 +4448,15 @@
 
   /** Schwierigkeitsgrad waehlen: drei Karten nebeneinander. */
   function drawSelect() {
-    drawSky('festung');
-    drawParallax('festung', G.tick * 0.2, 0);
+    var scx = G.tick * 0.2;
+    hintergrund('festung', scx, 0, 0, function () { drawSky('festung'); drawParallax('festung', scx, 0); });
+    if (EB) EB.hinten(ctx, G, 'festung', scx, 0, W, H);
     ctx.fillStyle = 'rgba(8,5,12,0.66)';
     ctx.fillRect(0, 0, W, H);
+    if (EB) {
+      EB.vorne(ctx, G, 'festung', scx, 0, W, H, { ohneSpielfeld: true, ohneSilhouetten: true });
+      if (LI) LI.vignette(ctx, W, H, 0.5);
+    }
 
     F.draw(ctx, 'LEVEL WÄHLEN', W / 2, 24, {
       color: '#ffd257', align: 'center', scale: 3, shadow: true
@@ -4762,9 +4876,19 @@
     if (v.w === W && v.h === H) return;
     W = v.w; H = v.h;
     BOTTOM_PAD = (H < 288) ? 16 : 0;
-    canvas.width = W; canvas.height = H;
-    ctx.imageSmoothingEnabled = false;
+    leinwand();
     resize();
+  }
+
+  /** Die Leinwand auf W x H mal Render-Skala bringen. logischW/H lesen
+      input.js (Maus, Finger) und die Tests: dort zaehlen Spiel-Pixel. */
+  function leinwand() {
+    if (canvas.width !== W * RS || canvas.height !== H * RS) {
+      canvas.width = W * RS; canvas.height = H * RS;
+    }
+    canvas.logischW = W; canvas.logischH = H;
+    ctx.imageSmoothingEnabled = false;
+    if (LI) LI.setRs(RS);
   }
 
   function resize() {
@@ -4777,16 +4901,24 @@
         // So gross wie moeglich, ohne Rand
         s = Math.min(ww / W, wh / H);
       } else {
-        s = Math.max(1, Math.min((ww - 24) / W, (wh - 24) / H));
-        // Ganzzahlige Skalierung: bei SCHARF immer, sonst solange sie
-        // nicht zu viel Platz verschenkt
-        var si = Math.floor(s);
-        if (art === 'scharf') s = Math.max(1, Math.floor(Math.min(ww / W, wh / H)));
-        else if (si >= 1 && (s - si) < 0.34) s = si;
+        s = Math.min((ww - 24) / W, (wh - 24) / H);
+        if (s < 1) {
+          // Kleines Fenster: lieber verkleinert als abgeschnitten
+          s = Math.max(0.25, Math.min(ww / W, wh / H));
+        } else {
+          // Ganzzahlige Skalierung: bei SCHARF immer, sonst solange sie
+          // nicht zu viel Platz verschenkt
+          var si = Math.floor(s);
+          if (art === 'scharf') s = Math.max(1, Math.floor(Math.min(ww / W, wh / H)));
+          else if (si >= 1 && (s - si) < 0.34) s = si;
+        }
       }
     }
     canvas.style.width = Math.round(W * s) + 'px';
     canvas.style.height = Math.round(H * s) + 'px';
+    // So fein zeichnen, wie das Bild wirklich angezeigt wird
+    var rs = LI ? LI.rsFuer(s, global.devicePixelRatio || 1, W, H, G.touch) : 1;
+    if (rs !== RS) { RS = rs; leinwand(); }
   }
   function onResize() { applyView(); resize(); }
   G.onSkalierung = resize;
@@ -4798,6 +4930,7 @@
   /* ================= Start ================= */
 
   global.Input.init(canvas);
+  leinwand();
   applyView();
   resize();
   // Weltweite Bestenliste sofort holen, damit sie beim Start schon dasteht
@@ -4874,12 +5007,16 @@
   function frame(now) {
     var dt = now - last;
     last = now;
+    // Ruckelt es dauerhaft, schaltet GRAFIK: AUTOMATISCH herunter (licht.js)
+    if (LI && LI.messen(dt)) resize();
     if (dt > 250) dt = STEP;     // nach Tab-Wechsel nicht aufholen
     acc += dt;
     var guard = 0;
-    while (acc >= STEP && guard++ < 5) { update(); acc -= STEP; }
-    // Mehr als fuenf Schritte pro Bild holt das Spiel nicht nach. Den Rest
-    // verwerfen — sonst lief es nach einem Ruckler sekundenlang im Zeitraffer.
+    // Bis zu acht Schritte pro Bild: auch bei 8 Bildern pro Sekunde laeuft
+    // das Spiel noch in Echtzeit (frueher fuenf: unter 12 Bildern Zeitlupe).
+    while (acc >= STEP && guard++ < 8) { update(); acc -= STEP; }
+    // Mehr holt das Spiel nicht nach. Den Rest verwerfen — sonst lief es
+    // nach einem Ruckler sekundenlang im Zeitraffer.
     if (acc >= STEP) acc = 0;
     render();
     requestAnimationFrame(frame);
@@ -4910,6 +5047,8 @@
   G._menu = menuItems;
   G._titleMenuTop = titleMenuTop;
   G._canvas = canvas;          // semih.js haelt das letzte Bild fest, wenn es zerspringt
+  G.rs = function () { return RS; };
+  G.viewH = function () { return H; };
 
   global.G = G;
 
