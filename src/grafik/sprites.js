@@ -312,7 +312,9 @@
   P.def('erfan', ERFAN_KUNST, ERFAN_PAL);
 
   /* Erfan als Boss bekommt ein Laufbild und zwei Formen (Esat, 29.09.:
-     "zu langweilig, bei der Mutation soll er anders aussehen"):
+     "zu langweilig, bei der Mutation soll er anders aussehen"). Seit 02.10.
+     sind es der Persische Koenig und der Safran-Koenig (weiter unten);
+     die beiden alten Formen bleiben fuer Zwischenszenen definiert:
      SAFRAN-EKSTASE: safranoranges Hemd, Safran-Schuerze, goldene Augen und
        eine Krone aus Krokusblueten — daraus wird Safran gemacht.
      SAMOWAR-RAUSCH: knallrotes Gesicht, rote Augen, dunkelrotes Hemd,
@@ -344,6 +346,22 @@
   P.def('erfan_safran2', KROKUS.concat(erfanLaufen(ERFAN_ZEILEN)), SAFRAN_PAL);
   P.def('erfan_samowar', ERFAN_ZEILEN, SAMOWAR_PAL);
   P.def('erfan_samowar2', erfanLaufen(ERFAN_ZEILEN), SAMOWAR_PAL);
+  /* Seit 02.10. (Esat): die zweite Form heisst PERSISCHER KOENIG — goldene
+     Krone mit Rubin und Saphir, Purpurgewand mit Goldsaum —, die letzte
+     SAFRAN-KOENIG: Safrangewand, goldene Augen, Krone mit Krokusblueten. */
+  var KRONE = ['....e..ee..e....', '....ee.ee.ee....', '....efeqqefe....'];
+  var KOENIG_PAL = mit(ERFAN_PAL, {
+    r: '#6a2a9a', R: '#40155e', a: '#8a3ac8', A: '#ffd257',
+    e: '#ffd21a', f: '#e01a3a', q: '#3ad0ff'
+  });
+  var SAFRANKOENIG_PAL = mit(SAFRAN_PAL, {
+    s: '#eaa070', S: '#ffc898', a: '#ffb000', A: '#ff3a1a',
+    e: '#ffd21a', f: '#9a5ad8', q: '#ff3a1a'
+  });
+  P.def('erfan_koenig', KRONE.concat(ERFAN_ZEILEN), KOENIG_PAL);
+  P.def('erfan_koenig2', KRONE.concat(erfanLaufen(ERFAN_ZEILEN)), KOENIG_PAL);
+  P.def('erfan_safrankoenig', KRONE.concat(ERFAN_ZEILEN), SAFRANKOENIG_PAL);
+  P.def('erfan_safrankoenig2', KRONE.concat(erfanLaufen(ERFAN_ZEILEN)), SAFRANKOENIG_PAL);
   /* ... und der Samowar auf seinem Ruecken (wird hinter ihm gezeichnet) */
   P.def('samowar_ruecken', `
     ...kk...
@@ -1656,6 +1674,22 @@
     .kwwwk.
     ..kkk..
   `, 'markt');
+
+  /* Bierflasche (Alex im letzten Herz): braunes Glas, Etikett, Kronkorken. */
+  P.def('bierflasche', `
+    ..yy..
+    ..kk..
+    ..GG..
+    .kGGk.
+    kGGGGk
+    kGwwGk
+    kGwwGk
+    kHGGGk
+    kHGGGk
+    kGGGGk
+    kGGGGk
+    .kkkk.
+  `, { k: '#2a1808', y: '#ffd257', G: '#8a4a14', H: '#c8823a', w: '#f4f0e0' });
 
   /* Bierdose. */
   P.def('bier', `

@@ -5,18 +5,22 @@
 (function (global) {
   'use strict';
 
+  /* gas, hopp, nitro: nur in den Autos (Level 6 und 18, Esat 02.10.: "man
+     faehrt nur mit W, auf Space springt man"). gas = W / Pfeil hoch / RT,
+     hopp = die echte Sprungtaste (Leertaste, A) — damit W nicht nebenbei
+     springt —, nitro = Shift / X / RB. */
   var ACTIONS = ['left', 'right', 'up', 'down', 'jump', 'run', 'throw',
-                 'pause', 'mute', 'confirm', 'back', 'puff'];
+                 'pause', 'mute', 'confirm', 'back', 'puff', 'gas', 'hopp', 'nitro'];
 
   var KEYMAP = {
     'ArrowLeft': ['left'], 'KeyA': ['left'],
     'ArrowRight': ['right'], 'KeyD': ['right'],
-    'ArrowUp': ['up', 'jump'], 'KeyW': ['up', 'jump'],
+    'ArrowUp': ['up', 'jump', 'gas'], 'KeyW': ['up', 'jump', 'gas'],
     'ArrowDown': ['down'], 'KeyS': ['down'],
-    'Space': ['jump', 'confirm'],
-    'KeyK': ['jump'],
-    'KeyJ': ['jump'],
-    'ShiftLeft': ['run', 'throw'], 'ShiftRight': ['run', 'throw'],
+    'Space': ['jump', 'confirm', 'hopp'],
+    'KeyK': ['jump', 'hopp'],
+    'KeyJ': ['jump', 'hopp'],
+    'ShiftLeft': ['run', 'throw', 'nitro'], 'ShiftRight': ['run', 'throw', 'nitro'],
     'KeyE': ['throw'], 'KeyF': ['throw'], 'KeyX': ['throw'],
     'Enter': ['confirm'],
     'NumpadEnter': ['confirm'],
@@ -33,8 +37,8 @@
      bleiben aber zusaetzlich aktiv. So kann man sich nie aussperren. */
   var STANDARD = KEYMAP;
   var BELEGBAR = {
-    left: ['left'], right: ['right'], up: ['up'], down: ['down'], jump: ['jump'],
-    throw: ['run', 'throw'], pause: ['pause'], puff: ['puff']
+    left: ['left'], right: ['right'], up: ['up', 'gas'], down: ['down'], jump: ['jump', 'hopp'],
+    throw: ['run', 'throw', 'nitro'], pause: ['pause'], puff: ['puff']
   };
   var eigene = {};
   var fangen = null;     // wartet auf die naechste Taste (Einstellungen)
@@ -152,9 +156,9 @@
   var tapPos = null;    // letztes Tippen aufs Bild, in Spielkoordinaten
 
   function actsFor(key) {
-    return (key === 'jump') ? ['jump', 'confirm']
+    return (key === 'jump') ? ['jump', 'confirm', 'hopp']
          : (key === 'pause') ? ['pause']
-         : (key === 'throw') ? ['throw', 'run']
+         : (key === 'throw') ? ['throw', 'run', 'nitro']
          : [key];
   }
 
@@ -318,6 +322,10 @@
         jump: btn(p, 0) || btn(p, 1),
         run: btn(p, 2) || btn(p, 5) || btn(p, 7),
         throw: btn(p, 2) || btn(p, 5) || btn(p, 7),
+        // Im Auto: RT oder hoch = Gas, A/B = springen, X/RB = Nitro
+        gas: btn(p, 7) || stick.up || btn(p, 12),
+        hopp: btn(p, 0) || btn(p, 1),
+        nitro: btn(p, 2) || btn(p, 5),
         pause: btn(p, 9),
         confirm: btn(p, 0) || btn(p, 9),
         back: btn(p, 1) || btn(p, 8)

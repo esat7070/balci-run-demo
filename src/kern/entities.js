@@ -297,8 +297,9 @@
 
   function Floats() { this.list = []; }
   Floats.prototype.add = function (x, y, text, col, life) {
-    this.list.push({ x: x, y: y, text: text, col: col || '#fff3c8',
-                     life: life || 60, max: life || 60 });
+    var f = { x: x, y: y, text: text, col: col || '#fff3c8', life: life || 60, max: life || 60 };
+    this.list.push(f);
+    return f;
   };
   Floats.prototype.update = function () {
     for (var i = this.list.length - 1; i >= 0; i--) {
@@ -914,6 +915,8 @@
 
     this.hp -= dmg;
     if (g.einschlag) g.einschlag(this.cx(), this.y + this.h / 2, 'aua');
+    // Der Boss freut sich, wenn er trifft — und ist dabei kurz offen
+    if (g.boss && !g.boss.dead && g.boss.yusufGetroffen && this.hp > 0) g.boss.yusufGetroffen(g);
     this.invuln = global.Balance.s('unverwundbar');
     this.hurtTimer = 40;
     this.sleeping = false;
@@ -1191,6 +1194,14 @@
 
   Enemy.prototype.upSalat = function (g) {
     this.vy += GRAV * 0.9;
+    // Vor einer Wand umdrehen, statt hinaufzuhuepfen (Esat, 02.10.: die
+    // Peperoni bei Hamza sprangen hinten auf die Wand). Eine Wand ist alles,
+    // was vor ihm von den Fuessen bis zwei Kacheln darueber steht.
+    var vorX = this.vx > 0 ? this.x + this.w + 1 : this.x - 1;
+    var fussTy = Math.floor((this.y + this.h - 1) / T), vorTx = Math.floor(vorX / T);
+    for (var wy = fussTy - 2; wy <= fussTy; wy++) {
+      if (g.world.solid(vorTx, wy)) { this.vx = -this.vx; break; }
+    }
     if (moveX(this, g.world, this.vx) !== 0) this.vx = -this.vx;
     if (moveY(this, g.world, this.vy) === 1) this.vy = -6.2;  // hüpft ewig
     this.facing = this.vx > 0 ? 1 : -1;
@@ -1507,6 +1518,13 @@
   var FRESSBAR = { shawarma: 1, souvlaki: 1, doener: 1, kubide: 1, baklava: 1, gold: 1, boerek: 1,
                    brezel: 1, simit: 1, balik: 1 };
 
+  /* Was nur heilt, bleibt liegen, solange Yusuf volle Herzen hat (Esat,
+     02.10.): Herzen und Essen. Verliert er eins, kann er zurueck und es
+     holen. Gold-Doener und Baklava geben mehr als ein Herz — die nimmt
+     er immer mit. */
+  var HEILT_NUR = { herz: 1, shawarma: 1, souvlaki: 1, doener: 1, kubide: 1, boerek: 1,
+                    brezel: 1, simit: 1, balik: 1 };
+
   function Item(type, x, y, popped) {
     var d = ITEM[type] || ITEM.honig;
     this.t = type;
@@ -1537,9 +1555,23 @@
     } else {
       this.y = this.oy + Math.sin(this.t0 * 0.075) * 2;
     }
+    if (this.vollT > 0) this.vollT--;
 
-    if (!g.player.dead && overlap(this, g.player)) this.collect(g);
+    var p = g.player;
+    if (p.dead || !overlap(this, p)) return;
+    if (HEILT_NUR[this.t] && p.hp >= p.maxHp) {
+      // Volle Herzen: liegen lassen. Einmal sagen, warum.
+      if (!this.vollT) {
+        g.floats.add(this.x + this.w / 2, this.y - 10,
+                     this.t === 'herz' ? 'HERZEN SIND VOLL. BLEIBT LIEGEN.' : 'HEB ICH MIR AUF. FÜR SPÄTER.',
+                     '#c8b8e0', 60);
+      }
+      this.vollT = 140;
+      return;
+    }
+    this.collect(g);
   };
+  Item.HEILT_NUR = HEILT_NUR;
 
   Item.prototype.collect = function (g) {
     var p = g.player;
@@ -1671,6 +1703,7 @@
     else if (type === 'wodka') { this.w = 7; this.h = 13; this.spr = 'wodka'; this.grav = 0.24; }
     else if (type === 'bier') { this.w = 7; this.h = 8; this.spr = 'bier'; this.grav = 0.16; }
     else if (type === 'kotze') { this.w = 10; this.h = 5; this.spr = 'kotze'; this.grav = 0.3; }
+    else if (type === 'bierflasche') { this.w = 6; this.h = 12; this.spr = 'bierflasche'; this.grav = 0.24; this.spin = true; }
     else if (type === 'pfuetze') {
       // Was liegen bleibt: Kotze oder zerdepperter Wodka. Nicht reintreten.
       this.w = 20; this.h = 5; this.spr = null; this.grav = 0;
@@ -1766,6 +1799,9 @@
 
   /* Mirkans alte Felgen (nach dem Felgenwechsel): Sie rollen ueber den
      Boden auf Yusuf zu und huepfen dabei ab und zu. Drueberspringen! */
+  /* Brokes Mahnungen (vom Mika-Turm): flattern im Bogen */
+  Projectile.ARTEN.mahnung = { w: 10, h: 7, spr: 'zettel', grav: 0.2, spin: true };
+
   Projectile.ARTEN.felge = { w: 12, h: 12, spr: 'felge', grav: 0.35, spin: true };
   Projectile.EIGEN.felge = function (g) {
     var fx = Math.floor((this.x + this.w / 2) / T), fy = Math.floor((this.y + this.h) / T);
@@ -1788,6 +1824,72 @@
       this.pop(g, '#d6dbe6');
     }
     if (this.t0 > 360) this.dead = true;
+  };
+
+  /* Erfans Koobideh, das nicht getroffen hat, steckt im Boden. Yusuf
+     isst es auf (Erfan: "DAS WAR FUER DIE GAESTE!") — beim dritten heult
+     Erfan und ist betaeubt. Hoechstens vier liegen gleichzeitig da. */
+  Projectile.ARTEN.koobideh = { w: 16, h: 12, spr: 'kubide', grav: 0, harmless: true, life: 480 };
+  Projectile.EIGEN.koobideh = function (g) {
+    this.vy = 0; this.vx = 0;
+    if (--this.life <= 0) { this.pop(g, '#a8542a'); return; }
+    if (this.t0 % 20 === 0) {
+      g.particles.spawn({ x: this.x + 4 + Math.random() * 8, y: this.y, vx: 0, vy: -0.5, life: 22,
+                          col: '#f4f0ea', size: 2, grav: -0.01 });
+    }
+    var p = g.player;
+    if (!p.dead && overlap(this, p)) {
+      this.dead = true;
+      p.score += 50;
+      global.Sound.play('bite');
+      g.floats.add(p.cx(), p.y - 10, 'MMMH, KOOBIDEH!', '#ffcf4a', 50);
+      g.particles.burst(this.x + 8, this.y + 6, 8, { col: '#a8542a', spread: 1.8, up: 1, life: 20 });
+      if (g.boss && g.boss.koobidehGegessen) g.boss.koobidehGegessen(g);
+    }
+  };
+  function koobidehLandet(g, pr, groundY) {
+    var n = 0, aeltest = null;
+    for (var i = 0; i < g.projectiles.length; i++) {
+      var q = g.projectiles[i];
+      if (q && q.t === 'koobideh' && !q.dead) {
+        n++;
+        if (!aeltest || q.life < aeltest.life) aeltest = q;
+      }
+    }
+    if (n >= 4 && aeltest) aeltest.dead = true;
+    var k = g.addProjectile('koobideh', pr.x, groundY - 12, 0, 0);
+    if (k) { k.y = groundY - k.h; k.bossShot = pr.bossShot; }
+    g.particles.burst(pr.x + 8, groundY - 2, 6, { col: '#c8a878', spread: 1.6, up: 0.8, life: 18 });
+  }
+
+  /* Huseyins Sixpack-Blendung: ein waagerechter Lichtstrahl. Ducken
+     oder drueberspringen. */
+  Projectile.ARTEN.glanz = { w: 26, h: 8, spr: null, grav: 0, life: 110, ghost: true };
+  Projectile.EIGEN.glanz = function (g) {
+    if (--this.life <= 0) { this.pop(g, '#fff4c8'); return; }
+    if (this.t0 % 3 === 0) {
+      g.particles.spawn({ x: this.x + Math.random() * this.w, y: this.y + Math.random() * this.h, vx: -this.vx * 0.1,
+                          vy: 0, life: 12, col: '#ffd257', size: 2, grav: 0 });
+    }
+    if (g.arena && (this.x < g.arena.x - 20 || this.x > g.arena.x + g.arena.w + 20)) { this.dead = true; return; }
+    var p = g.player;
+    if (!p.dead && overlap(this, p) && p.power <= 0 && p.pound !== -1) {
+      p.hurt(g, 1, this.x + this.w / 2);
+      g.floats.add(p.cx(), p.y - 20, 'GEBLENDET!', '#fff4c8', 50);
+      this.pop(g, '#fff4c8');
+    }
+  };
+  Projectile.ZEICHNEN.glanz = function (ctx, pr, camX, camY) {
+    var x = Math.round(pr.x - camX), y = Math.round(pr.y - camY), a = Math.min(1, pr.life / 20);
+    ctx.globalAlpha = 0.35 * a;
+    ctx.fillStyle = '#ffd257';
+    ctx.fillRect(x - 6, y - 3, pr.w + 12, pr.h + 6);
+    ctx.globalAlpha = 0.9 * a;
+    ctx.fillStyle = '#fff4c8';
+    ctx.fillRect(x, y + 1, pr.w, pr.h - 2);
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(x + 2, y + 3, pr.w - 4, 2);
+    ctx.globalAlpha = 1;
   };
 
   /** Fleck am Boden hinterlassen — hoechstens drei von jeder Sorte, sonst
@@ -1876,7 +1978,7 @@
       if (!pl.dead && pl.grounded && overlap(this, pl)) {
         if (this.t === 'pfuetze') {
           if (pl.slip <= 0) {
-            pl.slip = 50;
+            pl.slip = 36;
             global.Sound.play('move');
             g.floats.add(pl.cx(), pl.y - 14, 'AUSGERUTSCHT!', '#bfe6ff', 50);
           }
@@ -2031,16 +2133,38 @@
     // Boxhieb: steht nur ein paar Ticks
     if (this.t === 'faust') {
       if (--this.life <= 0) { this.dead = true; return; }
+      if (this.folgt) this.x = this.folgt.facing > 0 ? this.folgt.x + this.folgt.w : this.folgt.x - this.w;
       var pf2 = g.player;
       if (!pf2.dead && overlap(this, pf2) && pf2.power <= 0 && pf2.pound !== -1) {
+        var vorher = pf2.hurtTimer;
         pf2.hurt(g, 1, this.x + this.w / 2);
+        // Ein Tritt mit Wucht (Huseyins Teep) schiebt weit weg
+        var wucht = this.wucht || this.rueck;
+        if (wucht && pf2.hurtTimer === 40 && vorher !== 40) {
+          pf2.vx = (pf2.cx() > this.x + this.w / 2 ? 1 : -1) * wucht;
+          pf2.vy = Math.min(pf2.vy, -5);
+        }
         this.dead = true;
       }
       return;
     }
 
-    // Fussball: springt vom Boden und von Waenden ab
+    // Fussball: springt vom Boden und von Waenden ab. Wer im Bosskampf
+    // draufspringt, schiesst ihn zurueck — trifft er Hamza: EIGENTOR.
     if (this.t === 'ball') {
+      var pb2 = g.player;
+      if (!this.friendly && g.boss && g.boss.eigentor && !g.boss.dead && !pb2.dead && overlap(this, pb2) &&
+          pb2.vy > 0.5 && pb2.feet() - this.y < 10) {
+        var zb = g.boss, bdx = zb.cx() - (this.x + this.w / 2);
+        var bdy = (zb.y + zb.h * 0.4) - (this.y + this.h / 2);
+        var bt = Math.max(16, Math.min(50, Math.abs(bdx) / 6.5));
+        this.friendly = true; this.zurueck = true;
+        this.vx = bdx / bt; this.vy = Math.max(-11, Math.min(-1, bdy / bt - 0.5 * this.grav * bt));
+        this.bounces = 3; this.t0 = 0;
+        pb2.vy = -8.2; pb2.jumpsLeft = 1;
+        global.Sound.play('shoot');
+        g.floats.add(pb2.cx(), pb2.y - 14, 'ZURÜCK!', '#ffffff', 40);
+      }
       var bby = Math.floor((this.y + this.h) / T);
       if (this.vy > 0 && this.solidAt(g, cxT, bby)) {
         this.y = bby * T - this.h;
@@ -2079,11 +2203,11 @@
     }
 
     // Flasche und Kotze hinterlassen eine Pfuetze, wenn sie aufschlagen.
-    if (this.t === 'wodka' || this.t === 'kotze') {
+    if (this.t === 'wodka' || this.t === 'kotze' || this.t === 'bierflasche') {
       var lty = Math.floor((this.y + this.h) / T);
       if (this.vy > 0 && this.solidAt(g, cxT, lty)) {
         this.dead = true;
-        var glas = (this.t === 'wodka');
+        var glas = (this.t === 'wodka' || this.t === 'bierflasche');
         // Hoechstens drei Pfuetzen gleichzeitig — sonst ist der ganze
         // Boden belegt und der Kampf nicht mehr fair.
         var pfn = 0, aeltest = null;
@@ -2098,7 +2222,7 @@
 
         var pf = g.addProjectile('pfuetze', this.x - 6, lty * T - 5, 0, 0);
         if (pf) {
-          pf.col = glas ? '#bfe6ff' : '#7fc24a';
+          pf.col = this.t === 'bierflasche' ? '#e8b830' : (glas ? '#bfe6ff' : '#7fc24a');
           pf.life = glas ? 90 : 130;
           pf.bossShot = this.bossShot;
         }
@@ -2137,6 +2261,16 @@
       }
     }
 
+    // Erfans Spiess steckt im Boden, wenn er nicht trifft (nur im Bosskampf)
+    if (this.t === 'spiess' && this.bossShot && g.boss && g.boss.koobidehGegessen) {
+      var sty = Math.floor((this.y + this.h) / T);
+      if (this.vy > 0 && this.solidAt(g, cxT, sty)) {
+        this.dead = true;
+        koobidehLandet(g, this, sty * T);
+        return;
+      }
+    }
+
     if (this.t === 'kippe') {
       // Kippen hüpfen über den Boden statt geradeaus zu fliegen.
       var below = Math.floor((this.y + this.h) / T);
@@ -2168,7 +2302,8 @@
         return;
       }
       if (g.boss && !g.boss.dead && overlap(this, g.boss)) {
-        g.boss.hit(g, 1, null);
+        if (this.zurueck && g.boss.eigentor) g.boss.eigentor(g);
+        else g.boss.hit(g, 1, null);
         this.pop(g, '#ffb43c');
       }
     } else if (!g.player.dead && overlap(this, g.player)) {
@@ -2178,6 +2313,9 @@
       } else {
         if (this.t === 'zettel' && g.player.invuln <= 0) {
           g.floats.add(g.player.cx(), g.player.y - 22, 'STRAFZETTEL! 35 EURO!', '#f4f4ee', 70);
+        }
+        if (this.t === 'mahnung' && g.player.invuln <= 0) {
+          g.floats.add(g.player.cx(), g.player.y - 22, 'MAHNUNG ZUGESTELLT.', '#f4f4ee', 60);
         }
         g.player.hurt(g, 1, this.x + this.w / 2);
       }
@@ -2297,12 +2435,16 @@
   }
 
   function bossBounce(b, g, p, col, dmg) {
-    b.invuln = b.rage ? 40 : 48;
+    // Liegt er betaeubt da (Mario), bleibt er liegen: kurze Schonzeit,
+    // dann geht der naechste Sprung wieder rein — zwei, drei Treffer.
+    var liegt = b.state === 'betaeubt' && b.timer > 0;
+    b.invuln = liegt ? 22 : (b.rage ? 40 : 48);
     b.flash = 16;
-    b.state = 'idle';
-    b.timer = b.rage ? 14 : 24;
+    if (liegt) b.timer = Math.max(16, b.timer - 30);
+    else { b.state = 'idle'; b.timer = b.rage ? 14 : 24; }
+    b.kombo = null;
     b.landed = true;
-    b.vx = (p && p.cx() > b.cx()) ? -2.6 : 2.6;
+    b.vx = liegt ? 0 : ((p && p.cx() > b.cx()) ? -2.6 : 2.6);
     if (p) { p.vy = -8.2; p.jumpsLeft = 1; p.laughTimer = 40; }
     if (g.onBossHit) g.onBossHit(b, dmg);
     global.Sound.play('bossHit');
@@ -2353,7 +2495,7 @@
     b.hp = b.maxHp;
     g.bossLeben = b.lebenMax - b.leben;
     if (still) {
-      b.onTransform(g);
+      b.onTransform(g, true);
       letzteFormAn(b);
       b.phase = g.bossLeben + 1;
       return;
@@ -2439,7 +2581,166 @@
     });
   }
 
-  /* ================= HUSEYIN ================= */
+  /* =====================================================================
+     KAMPF-HIRN — was alle Bosse koennen (Esat, 02.10.: "mache alle
+     Bosskaempfe individuell und klau Logiken von anderen Spielen wie bei
+     Mario oder Hollow Knight, wie Bosskaempfe aufgebaut sind").
+
+     Abgeschaut bei Hollow Knight:
+       - Jeder Angriff hat einen Anlauf, den man lesen kann (Pose, ein !,
+         ein Geraeusch) — und danach eine kurze Pause, in der er offen ist.
+       - Welcher Angriff kommt, haengt davon ab, wo Yusuf gerade ist: nah,
+         weit, in der Luft, ueber ihm, oben auf einer Plattform (waehle).
+       - Im letzten Herz verkettet er Angriffe zu Kombos (kombo).
+     Abgeschaut bei Mario:
+       - Jeder Boss hat seinen eigenen Trick, wie man ihn erwischt (Mirkan
+         rammt die Wand, Lennart ist nach dem Kreuzheben fertig, Erfan
+         heult, wenn man sein Koobideh isst, Hamza schiesst ein Eigentor
+         ...). Wer den Trick findet, haut ihn um: BETAEUBT — er liegt mit
+         Sternchen da, und man kann zwei-, dreimal draufspringen.
+       - Trifft er Yusuf, freut er sich kurz (Spott) — die Gelegenheit.
+     ===================================================================== */
+
+  /** Wo ist Yusuf, von diesem Boss aus gesehen? */
+  function lage(b, g) {
+    var p = g.player, dx = p.cx() - b.cx(), adx = Math.abs(dx);
+    var lo = g.arena ? g.arena.x : -1e9, hi = g.arena ? g.arena.x + g.arena.w : 1e9;
+    return {
+      dx: dx, adx: adx, dir: dx > 0 ? 1 : -1,
+      nah: adx < 80, mittel: adx >= 80 && adx < 180, weit: adx >= 180,
+      luft: !p.grounded,
+      ueber: !p.grounded && adx < b.w / 2 + 40 && p.feet() < b.y + 12,
+      oben: p.feet() < b.y + b.h - 44,
+      hinten: (dx > 0) !== (b.facing > 0),
+      bossAnWand: Math.min(b.x - lo, hi - b.x - b.w) < 56,
+      yusufAnWand: Math.min(p.x - lo, hi - p.x - p.w) < 64,
+      rest: b.hp / b.maxHp
+    };
+  }
+
+  /** Gewichtete Wahl wie bei Hollow Knight: liste = [{ s: Zustand, t: Dauer,
+      w: Gewicht oder function (lage, boss), wenn: function (lage, boss),
+      dann: function (boss, g, lage) }]. Was eben kam, kommt kaum nochmal. */
+  function waehle(b, g, liste) {
+    var l = lage(b, g), summe = 0, opt = [], i;
+    for (i = 0; i < liste.length; i++) {
+      var e = liste[i];
+      if (!e || (e.wenn && !e.wenn(l, b))) continue;
+      var w = typeof e.w === 'function' ? e.w(l, b) : (e.w === undefined ? 1 : e.w);
+      if (e.s === b.letzter) w *= 0.12;
+      if (w > 0) { opt.push([e, w]); summe += w; }
+    }
+    if (!opt.length) { b.go('idle', 20); return null; }
+    var r = Math.random() * summe;
+    for (i = 0; i < opt.length - 1; i++) { r -= opt[i][1]; if (r <= 0) break; }
+    var wahl = opt[i][0];
+    b.letzter = wahl.s;
+    b.letzterAngriff = wahl.s;
+    b.facing = l.dir;
+    b.landed = true;
+    b.go(wahl.s, typeof wahl.t === 'function' ? wahl.t(l, b) : wahl.t);
+    if (wahl.dann) wahl.dann(b, g, l);
+    return wahl;
+  }
+
+  /** Kombo: nach dem jetzigen Angriff kommen diese [Zustand, Dauer] sofort. */
+  function kombo(b, folge) { b.kombo = folge.slice(); }
+  /** Im Leerlauf: steht eine Kombo an? Dann gleich weiter, ohne Pause. */
+  function komboWeiter(b, g) {
+    if (!b.kombo || !b.kombo.length) return false;
+    var n = b.kombo.shift();
+    b.facing = g.player.cx() > b.cx() ? 1 : -1;
+    b.landed = true;
+    b.go(n[0], n[1]);
+    return true;
+  }
+
+  /** Ein Boss sagt etwas. Sein voriger Satz verschwindet dafuer, sonst
+      stehen drei Saetze uebereinander. */
+  function sagt(b, g, text, col, life, dy) {
+    if (b.satz && b.satz.life > 8) b.satz.life = 8;
+    b.satz = g.floats.add(b.cx(), b.y - (dy || 20), text, col || '#ffd257', life || 70);
+    return b.satz;
+  }
+
+  /** Mario: der Trick hat geklappt — er liegt betaeubt am Boden. */
+  function betaeuben(b, g, dauer, text, col) {
+    if (b.dead) return;
+    b.go('betaeubt', dauer);
+    b.vx = 0;
+    b.kombo = null;
+    b.schwebt = false;
+    b.invuln = Math.min(b.invuln, 6);
+    g.shake(6, 16);
+    global.Sound.play('bossHit');
+    if (text) sagt(b, g, text, col, 100, 30);
+    g.particles.burst(b.cx(), b.y + 10, 18, { col: '#ffd257', spread: 2.6, up: 1, life: 30 });
+  }
+  /** Jeden Tick, solange er betaeubt ist: Sternchen kreisen, dann steht er auf. */
+  function tickBetaeubt(b, g) {
+    b.vx *= 0.8;
+    if (b.t0 % 5 === 0) {
+      var a = b.t0 * 0.21;
+      for (var k = 0; k < 2; k++) {
+        g.particles.spawn({ x: b.cx() + Math.cos(a + k * Math.PI) * (b.w * 0.5 + 6), y: b.y - 6 + Math.sin(a + k * Math.PI) * 3,
+                            vx: 0, vy: -0.1, life: 12, col: k ? '#ffffff' : '#ffd257', size: 2, grav: 0 });
+      }
+    }
+    if (b.timer <= 0) {
+      b.go('idle', b.rage ? 12 : 20);
+      if (b.aufstehText) sagt(b, g, b.aufstehText, '#c8c0d8', 60, 14);
+      return true;
+    }
+    return false;
+  }
+
+  /** Er hat Yusuf erwischt: kurz feiern, posieren, lachen — offen. */
+  function spott(b, g, text, col, dauer) {
+    if (b.dead || b.state === 'transform' || b.state === 'betaeubt' || (b.spottPause || 0) > 0) return false;
+    b.spottPause = 300;
+    b.kombo = null;
+    b.go('spott', dauer || 56);
+    b.vx = 0;
+    if (text) sagt(b, g, text, col, 70, 18);
+    return true;
+  }
+
+  /** Ein Schlag oder Tritt: eine Trefferflaeche fuer ein paar Ticks direkt
+      vor ihm (w breit, h hoch, yOff von oben). */
+  function schlag(b, g, w, h, yOff, life, rueck) {
+    var fx = b.facing > 0 ? b.x + b.w - 4 : b.x - w + 4;
+    var f = g.addProjectile('faust', fx, b.y + yOff, 0, 0);
+    if (f) { f.w = w; f.h = h; f.life = life || 6; f.rueck = rueck || 0; f.von = b; }
+    b.punchT = 6;
+    global.Sound.play('stomp');
+    return f;
+  }
+
+  /** Steht er (im naechsten Schritt) an der Arenawand? */
+  function anWand(b, g, vx) {
+    if (!g.arena) return false;
+    var lo = g.arena.x + 6, hi = g.arena.x + g.arena.w - 6, nx = b.x + (vx || 0);
+    return nx <= lo + 1 || nx + b.w >= hi - 1;
+  }
+
+  /* ================= HUSEYIN =================
+     Yusufs Bruder, drei Formen (Esat, 02.10.):
+       1. HUSEYIN       Lederjacke. Huepft, wirft Salat, sprintet. Verfehlt
+                        er mit dem Sprint, macht er zur Strafe Liegestuetze.
+       2. SIXPACK       Jacke aus, oben ohne. Posiert (das Sixpack blendet
+                        wie ein Lichtstrahl), Burpees mit Bodenwellen,
+                        Liegestuetze, bei denen jede Wiederholung bebt.
+       3. MUAY THAI     Handschuhe, Thai-Shorts, Stirnband. Erst der Wai
+                        Kru (der Tanz vor dem Kampf), dann Vollgas: Jab-Jab-
+                        Gerade, Teep (Stosstritt), Low Kick, fliegendes Knie.
+     Sein Trick (Mario): wer ihm WAEHREND der Liegestuetze auf den Ruecken
+     springt, macht ihn platt — betaeubt. Und im Muay Thai: wer ueber den
+     Low Kick springt, laesst ihn ins Leere treten — er dreht sich um sich
+     selbst und ist kurz schwindelig.
+     ============================================================== */
+
+  var HUS_LIEGE = { pushups: 1, strafe: 1, liegewelle: 1 };
+  var HUS_ZU = { dash: 1, knie: 1, lowkick: 1 };
 
   function Boss(tx, ty) {
     this.w = 20; this.h = 58;             // 2x skaliert gezeichnet
@@ -2460,35 +2761,61 @@
     this.stompY = 32;
     this.open = true;
     this.landed = true;
-    this.rageName = 'SALAT-BERSERKER';
-    this.rageCol = '#9dff6a';
-    dreiHerzen(this, { name: 'PERSONAL TRAINER', col: '#e8ff4a', ruf: 'PERSONAL TRAINER!',
-                       vorher: 'ICH RUF MEINEN TRAINER AN.' });
+    this.look = 'jacke';
+    this.punchT = 0;
+    this.spottPause = 0;
+    this.rageName = 'SIXPACK';
+    this.rageCol = '#ffb46a';
+    dreiHerzen(this, { name: 'MUAY THAI', col: '#ff3a3a', ruf: 'MUAY THAI!',
+                       vorher: 'HANDSCHUHE AN. JETZT WIRD ES ERNST.' });
   }
 
   Boss.prototype.cx = function () { return this.x + this.w / 2; };
   Boss.prototype.go = function (s, t) { this.state = s; this.timer = t; };
-  Boss.prototype.onTransform = function () { this.rage = true; };
+  Boss.prototype.onTransform = function (g, still) {
+    this.rage = true;
+    var alt = this.look;
+    this.look = this.leben <= 1 ? 'muaythai' : 'sixpack';
+    // Die Lederjacke fliegt (nur einmal, nicht nach einem Tod)
+    if (!still && alt === 'jacke' && g) {
+      g.particles.burst(this.cx(), this.y + 22, 26, { col: '#33323c', spread: 3.4, up: 1.6, life: 46 });
+      g.floats.add(this.cx(), this.y - 30, 'JACKE AUS!', '#ffb46a', 90);
+    }
+    if (!still && this.look === 'muaythai') this.waiKru = true;
+  };
+
+  /** Er hat Yusuf erwischt. In Jacke und oben ohne freut er sich —
+      im Muay Thai nicht mehr: da gibt es keine Pause. */
+  Boss.prototype.yusufGetroffen = function (g) {
+    if (this.state === 'lowkick') this.kickTraf = true;
+    if (this.look === 'muaythai') return;
+    if (this.look === 'sixpack') spott(this, g, 'SECHS STÜCK. UND DU? EINS. EIN GROSSES.', '#ffb46a', 64);
+    else spott(this, g, 'NOCH EINS? ICH HAB ZEIT. ICH HAB IMMER ZEIT.', '#9dff6a', 52);
+  };
 
   Boss.prototype.update = function (g) {
     this.t0++;
     if (this.flash > 0) this.flash--;
     if (this.invuln > 0) this.invuln--;
+    if (this.spottPause > 0) this.spottPause--;
+    if (this.punchT > 0) this.punchT--;
     if (this.dead) { bossDeath(this, g, '#9dff6a'); return; }
     if (this.intro) { bossMove(this, g); return; }
 
     var p = g.player;
     var dx = p.cx() - this.cx();
-    var spd = !this.rage ? 1 : (this.phase >= 3 ? 1.6 : 1.35);
+    var MT = this.look === 'muaythai';
+    var spd = !this.rage ? 1 : (MT ? 1.55 : 1.3);
     var i;
     this.timer--;
     rageSparks(this, g);
 
     switch (this.state) {
       case 'transform':
-        if (tickTransform(this, g, 'SALAT-BERSERKER!', this.rageCol)) {
-          this.go('idle', 12);
+        if (tickTransform(this, g, 'OBEN OHNE!', this.rageCol)) {
           this.phase = herzPhase(this);
+          if (this.waiKru) { this.waiKru = false; this.go('waikru', 96); }
+          else this.go('idle', 12);
           g.onBossPhase(this.phase);
         }
         break;
@@ -2496,7 +2823,18 @@
       case 'idle':
         this.vx *= 0.8;
         this.facing = dx > 0 ? 1 : -1;
-        if (this.timer <= 0) this.pickAttack(g, dx);
+        if (komboWeiter(this, g)) break;
+        if (this.timer <= 0) this.pickAttack(g);
+        break;
+
+      case 'betaeubt':
+        tickBetaeubt(this, g);
+        break;
+
+      case 'spott':
+        this.vx *= 0.8;
+        if (this.look === 'sixpack' && this.t0 % 6 === 0) this.glitzer(g);
+        if (this.timer <= 0) this.go('idle', 10);
         break;
 
       case 'walk':
@@ -2507,7 +2845,7 @@
       case 'throw':
         this.vx *= 0.8;
         if (this.timer === 12) {
-          var n = this.phase >= 3 ? 5 : (this.rage ? 4 : 2);
+          var n = this.rage ? 4 : 2;
           for (i = 0; i < n; i++) {
             g.addProjectile('blatt', this.cx(), this.y + 20,
               this.facing * (2.2 + i * 0.4) * (this.rage ? 1.15 : 1), -2.6 - i * 0.5);
@@ -2519,7 +2857,7 @@
 
       case 'shake':   // Protein-Shaker, waagerecht
         this.vx *= 0.8;
-        if (this.timer === 14 || (this.phase >= 3 && this.timer === 4)) {
+        if (this.timer === 14 || (this.rage && this.timer === 4)) {
           g.addProjectile('shaker', this.cx(), this.y + 24, this.facing * 3.4 * spd, 0);
           global.Sound.play('shoot');
         }
@@ -2534,10 +2872,10 @@
       case 'hop':
         this.facing = dx > 0 ? 1 : -1;
         if (this.grounded) {
-          this.vy = -6.4 - this.phase * 0.5;
-          this.vx = this.facing * (1.8 + this.phase * 0.5) * (this.rage ? 1.2 : 1);
+          this.vy = -6.4 - this.phase * 0.4;
+          this.vx = this.facing * (1.8 + this.phase * 0.4) * (this.rage ? 1.15 : 1);
           global.Sound.play('jump');
-          if (this.rage && Math.random() < 0.6) {
+          if (this.rage && Math.random() < 0.5) {
             g.addProjectile('blatt', this.cx(), this.y + 20, this.facing * 2.2, -1.8);
           }
         }
@@ -2548,93 +2886,256 @@
         this.vx *= 0.7;
         if (this.timer <= 0) {
           this.go('dash', 32);
+          this.dashTraf = false;
           global.Sound.play('bossRoar');
           g.shake(3, 8);
         }
         break;
 
       case 'dash':
-        this.vx = this.facing * 4.0 * spd;
-        if (this.timer <= 0) this.go('idle', this.rage ? 20 : 36);
-        break;
-
-      // Neu nach der Verwandlung: er wirbelt durch die Arena und
-      // verteilt Salatblaetter in alle Richtungen.
-      case 'tornado':
-        this.facing = ((this.t0 >> 2) & 1) ? 1 : -1;
-        this.vx = (dx > 0 ? 1 : -1) * 2.4 * spd;
-        if (this.timer % 9 === 0) {
-          var ang = this.t0 * 0.9;
-          g.addProjectile('blatt', this.cx() - 5, this.y + 16,
-                          Math.cos(ang) * 2.8, -2.0 - Math.abs(Math.sin(ang)) * 1.8);
+        this.vx = this.facing * 4.2 * spd;
+        if (this.t0 % 2 === 0) {
+          g.particles.spawn({ x: this.cx() - this.facing * 8, y: this.y + this.h - 2, vx: -this.facing, vy: -0.4,
+                              life: 14, col: '#c8c0b0', size: 2, grav: -0.01 });
         }
-        if (this.timer <= 0) this.go('idle', 24);
+        if (this.timer <= 0 || anWand(this, g, this.vx)) {
+          this.vx = 0;
+          // Daneben? Dann zur Strafe Liegestuetze — seine eigene Regel.
+          if (!MT && p.hurtTimer <= 0 && Math.random() < (this.rage ? 0.5 : 0.7)) {
+            this.pushups = 0;
+            this.go('strafe', 84);
+            sagt(this, g, 'DANEBEN? ZEHN LIEGESTÜTZE. MEINE REGEL.', '#9dff6a', 70);
+          } else this.go('idle', this.rage ? 18 : 30);
+        }
         break;
 
-      // Der Gag: mitten im Kampf Liegestuetze.
+      // Liegestuetze: der Gag — und sein Trick (draufspringen = platt)
       case 'pushups':
+      case 'strafe':
         this.vx = 0;
         this.pushups++;
         if (this.pushups % 16 === 0) {
           global.Sound.play('select');
-          g.floats.add(this.cx(), this.y - 8, '' + Math.floor(this.pushups / 16), '#9dff6a', 30);
+          g.floats.add(this.cx(), this.y + 6, '' + Math.floor(this.pushups / 16), '#9dff6a', 30);
         }
         if (this.timer <= 0) {
           this.go('idle', 12);
-          g.floats.add(this.cx(), this.y - 14, 'JETZT BIN ICH WARM!', '#9dff6a', 60);
+          sagt(this, g, 'JETZT BIN ICH WARM!', '#9dff6a', 60);
         }
         break;
 
-      case 'rain':
-        this.vx *= 0.8;
-        if (this.timer % (this.phase >= 3 ? 11 : 15) === 0) rainFromSky(g, 'blatt', 1.4);
-        if (this.timer <= 0) this.go('idle', 24);
+      /* ---------- SIXPACK ---------- */
+
+      // Er posiert. Das Sixpack glaenzt — und dann blendet es.
+      case 'flex':
+        this.vx *= 0.7;
+        if (this.timer === 40) sagt(this, g, 'SIEHST DU DAS? SECHS STÜCK!', '#ffb46a', 56);
+        if (this.t0 % 4 === 0) this.glitzer(g);
+        if (this.timer === 12) {
+          var hoehe = this.phase >= 3 ? [24, 44] : [30];
+          for (i = 0; i < hoehe.length; i++) {
+            g.addProjectile('glanz', this.cx() + this.facing * 8 - 13, this.y + hoehe[i], this.facing * 5.2 * spd, 0);
+          }
+          global.Sound.play('strahl');
+          g.floats.add(this.cx(), this.y - 14, 'SIXPACK-BLENDUNG!', '#fff4c8', 50);
+        }
+        if (this.timer <= 0) this.go('idle', 18);
+        break;
+
+      // Burpees: runter, hoch, Landung mit Bodenwelle. Dreimal.
+      case 'burpees':
+        this.vx *= 0.85;
+        if (this.timer === 92 || this.timer === 60 || this.timer === 28) {
+          this.vy = -8.4;
+          this.vx = (dx > 0 ? 1 : -1) * 1.5 * spd;
+          this.landed = false;
+          global.Sound.play('jump');
+          g.floats.add(this.cx(), this.y - 10, ['DREI!', 'ZWEI!', 'EINS!'][this.timer === 92 ? 0 : (this.timer === 60 ? 1 : 2)], '#ffb46a', 30);
+        }
+        if (this.grounded && !this.landed && this.vy >= 0) {
+          this.landed = true;
+          groundWaves(this, g, '#ffb46a', 2.8, 1, 50);
+        }
+        if (this.timer <= 0 && this.grounded) this.go('idle', 16);
+        break;
+
+      // Liegestuetze, bei denen jede Wiederholung den Boden beben laesst
+      case 'liegewelle':
+        this.vx = 0;
+        this.pushups++;
+        if (this.timer > 8 && this.timer % 22 === 0) {
+          var wl = g.addProjectile('welle', this.cx() - 7, this.y + this.h - 10, -2.6, 0);
+          var wr = g.addProjectile('welle', this.cx() - 7, this.y + this.h - 10, 2.6, 0);
+          if (wl) { wl.col = '#ffb46a'; wl.life = 70; }
+          if (wr) { wr.col = '#ffb46a'; wr.life = 70; }
+          g.shake(2, 6);
+          global.Sound.play('pound');
+          g.floats.add(this.cx(), this.y + 6, '' + Math.round((92 - this.timer) / 22), '#ffb46a', 26);
+        }
+        if (this.timer <= 0) this.go('idle', 14);
+        break;
+
+      /* ---------- MUAY THAI ---------- */
+
+      // Wai Kru: der Tanz vor dem Kampf. Langsam, feierlich — und offen.
+      case 'waikru':
+        this.vx = Math.sin(this.t0 * 0.05) * 0.5;
+        if (this.timer === 90) sagt(this, g, 'WAI KRU.', '#ff3a3a', 60);
+        if (this.timer === 40) sagt(this, g, 'FÜR MEINEN TRAINER. UND JETZT: VOLLGAS.', '#ff3a3a', 60);
+        if (this.timer <= 0) { this.go('idle', 6); global.Sound.play('bossRoar'); }
+        break;
+
+      // Kampfhaltung: kleine Hopser, Abstand finden, dann rein
+      case 'stance':
+        var soll = 58, ad = Math.abs(dx);
+        this.facing = dx > 0 ? 1 : -1;
+        if (this.grounded) {
+          this.vy = -2.6;
+          this.vx = this.facing * (ad > soll + 14 ? 2.6 : (ad < soll - 14 ? -2.2 : 0)) * spd;
+          if (this.vx * this.facing < 0 && anWand(this, g, this.vx * 4)) this.vx = 0;
+        }
+        if (this.timer <= 0 || (ad < soll + 10 && this.timer < 24)) this.go('idle', 2);
+        break;
+
+      case 'jabprep':
+      case 'teepprep':
+      case 'lowkickprep':
+      case 'knieprep':
+        this.vx *= 0.6;
+        this.facing = dx > 0 ? 1 : -1;
+        if (this.timer <= 0) {
+          var wohin = { jabprep: 'idle', teepprep: 'teep', lowkickprep: 'lowkick', knieprep: 'knie' }[this.state];
+          if (wohin === 'idle') this.go('idle', 0);
+          else this.go(wohin, wohin === 'knie' ? 60 : (wohin === 'lowkick' ? 18 : 16));
+          if (wohin === 'lowkick') this.kickTraf = false;
+          if (wohin === 'knie') {
+            var zx = p.cx() + p.vx * 14 - this.cx();
+            this.vy = -8.2;
+            this.vx = Math.max(-4.6, Math.min(4.6, zx / 30)) * spd;
+            this.landed = false;
+            global.Sound.play('bossRoar');
+          }
+        }
+        break;
+
+      case 'jab':
+      case 'cross':
+        if (this.timer === (this.state === 'cross' ? 14 : 9)) {
+          var gross = this.state === 'cross';
+          schlag(this, g, gross ? 30 : 24, 16, 14, gross ? 7 : 6);
+          this.vx = this.facing * (gross ? 4.4 : 3.2);
+          if (gross) g.floats.add(this.cx() + this.facing * 26, this.y + 2, 'GERADE!', '#ff3a3a', 26);
+        }
+        this.vx *= 0.82;
+        if (this.timer <= 0) this.go('idle', this.state === 'cross' ? 20 : 2);
+        break;
+
+      // Teep: Stosstritt. Tut weh und schiebt weit weg.
+      case 'teep':
+        if (this.timer === 14) {
+          var f = schlag(this, g, 32, 22, this.h - 36, 8);
+          if (f) f.wucht = 7.5;
+          this.vx = this.facing * 2;
+          g.floats.add(this.cx() + this.facing * 26, this.y + 8, 'TEEP!', '#ff3a3a', 26);
+        }
+        this.vx *= 0.85;
+        if (this.timer <= 0) this.go('idle', 16);
+        break;
+
+      // Low Kick: flach ueber den Boden. Drueberspringen! Wer das
+      // schafft, laesst ihn ins Leere treten (er ist dann schwindelig).
+      case 'lowkick':
+        if (this.timer === 14) {
+          schlag(this, g, 46, 20, this.h - 20, 9);
+          this.vx = this.facing * 1.6;
+          global.Sound.play('whoosh');
+        }
+        this.vx *= 0.85;
+        if (this.timer <= 0) {
+          if (!this.kickTraf) {
+            this.aufstehText = 'DAS... WAR EINE FINTE.';
+            betaeuben(this, g, this.phase >= 3 ? 80 : 95, 'INS LEERE! ALLES DREHT SICH!', '#ff3a3a');
+          } else this.go('idle', 14);
+        }
+        break;
+
+      // Fliegendes Knie: im Bogen auf Yusuf, Landung mit Bodenwelle
+      case 'knie':
+        if (this.grounded && !this.landed && this.vy >= 0 && this.timer < 56) {
+          this.landed = true;
+          this.vx = 0;
+          groundWaves(this, g, '#ff3a3a', 3.0, 1, 50);
+          this.go('knieende', 30);
+        }
+        if (this.timer <= 0 && (this.grounded || this.timer < -90)) this.go('idle', 20);
+        break;
+
+      case 'knieende':
+        this.vx *= 0.7;
+        if (this.timer <= 0) this.go('idle', 6);
         break;
     }
 
     bossMove(this, g);
 
     this.animT++;
-    if (this.animT > (this.state === 'dash' || this.state === 'tornado' ? 3 : 7)) {
+    if (this.animT > (this.state === 'dash' || this.state === 'stance' ? 3 : 7)) {
       this.animT = 0; this.anim++;
     }
 
-    this.open = !(this.state === 'dash' || this.state === 'tornado');
+    this.open = !HUS_ZU[this.state];
     bossContact(this, g);
   };
 
-  Boss.prototype.pickAttack = function (g, dx) {
-    var r = Math.random();
-    this.facing = dx > 0 ? 1 : -1;
-    this.landed = true;
+  /** Goldene Funken am Sixpack */
+  Boss.prototype.glitzer = function (g) {
+    g.particles.spawn({ x: this.cx() + (Math.random() - 0.5) * 10, y: this.y + 24 + Math.random() * 16,
+                        vx: (Math.random() - 0.5) * 0.6, vy: -0.6, life: 18,
+                        col: (this.t0 % 8) ? '#fff4c8' : '#ffd257', size: 2, grav: 0 });
+  };
 
-    if (!this.rage) {
-      if (r < 0.28) this.go('throw', 38);
-      else if (r < 0.44) this.go('walk', 42);
-      else if (r < 0.70) this.go('hop', 66);
-      else if (r < 0.86) { this.go('jump', 60); this.vy = -9.2; this.vx = this.facing * 2.2; }
-      else this.go('dashprep', 28);
-    } else if (this.phase === 2) {
-      if (r < 0.18) this.go('throw', 30);
-      else if (r < 0.32) this.go('shake', 28);
-      else if (r < 0.52) this.go('tornado', 78);
-      else if (r < 0.66) this.go('dashprep', 20);
-      else if (r < 0.84) this.go('hop', 64);
-      else this.go('rain', 64);
-    } else {
-      if (r < 0.24) this.go('tornado', 90);
-      else if (r < 0.42) this.go('rain', 70);
-      else if (r < 0.58) this.go('dashprep', 16);
-      else if (r < 0.72) this.go('shake', 26);
-      else if (r < 0.90) this.go('hop', 72);
-      else { this.go('pushups', 56); this.pushups = 0; }
+  Boss.prototype.pickAttack = function (g) {
+    var self = this, P3 = this.phase >= 3;
+    if (this.look === 'muaythai') {
+      waehle(this, g, [
+        { s: 'stance', t: 46, w: function (l) { return l.weit ? 4 : (l.mittel ? 2 : 0.4); } },
+        { s: 'jabprep', t: 12, w: function (l) { return l.nah ? 6 : 0; },
+          dann: function (b) { kombo(b, [['jab', 10], ['jab', 10], ['cross', 16]]); } },
+        { s: 'teepprep', t: 18, w: function (l) { return l.nah ? 3 : 0.3; } },
+        { s: 'lowkickprep', t: 22, w: function (l) { return l.nah ? 3 : (l.mittel ? 2 : 0); } },
+        { s: 'knieprep', t: 20, w: function (l) { return l.mittel ? 4 : (l.weit ? 2.5 : (l.oben ? 3 : 0.8)); } },
+        { s: 'dashprep', t: 16, w: function (l) { return l.weit ? 2 : 0.3; } }
+      ]);
+      return;
     }
-    if (Math.abs(dx) > 150 && this.state === 'throw') this.go('walk', 44);
+    if (this.look === 'sixpack') {
+      waehle(this, g, [
+        { s: 'flex', t: 48, w: function (l) { return l.nah ? 0.8 : 3; } },
+        { s: 'burpees', t: 100, w: function (l) { return (l.nah || l.oben) ? 3 : 1.4; } },
+        { s: 'liegewelle', t: 96, w: 1.2, dann: function (b) { b.pushups = 0; } },
+        { s: 'dashprep', t: 22, w: function (l) { return l.weit ? 4 : 1.2; } },
+        { s: 'hop', t: 60, w: function (l) { return l.mittel ? 2.5 : 1.2; } },
+        { s: 'throw', t: 30, w: function (l) { return l.nah ? 0.4 : 1.8; } },
+        { s: 'shake', t: 28, w: function (l) { return l.mittel ? 1.6 : 0.8; } }
+      ]);
+      return;
+    }
+    waehle(this, g, [
+      { s: 'hop', t: 66, w: function (l) { return l.mittel ? 3 : 2; } },
+      { s: 'throw', t: 38, w: function (l) { return l.nah ? 0.5 : 3; } },
+      { s: 'dashprep', t: 28, w: function (l) { return l.weit ? 4 : (l.mittel ? 2 : 0.6); } },
+      { s: 'jump', t: 60, w: function (l) { return (l.oben || l.ueber) ? 5 : 0.8; },
+        dann: function (b) { b.vy = -9.2; b.vx = b.facing * 2.2; } },
+      { s: 'shake', t: 30, w: function (l) { return l.mittel ? 1 : 0.4; } },
+      { s: 'walk', t: 42, w: function (l) { return l.weit ? 1 : 0.3; } },
+      { s: 'pushups', t: 70, w: 0.6, dann: function (b) { b.pushups = 0; } }
+    ]);
   };
 
   /** Einheitliche Signatur fuer ALLE Bosse: (spiel, schaden, spieler). */
   Boss.prototype.hit = function (g, dmg, p) {
     if (this.invuln > 0 || this.dead || this.state === 'transform') return;
+    var liege = HUS_LIEGE[this.state];
     this.hp -= dmg;
     bossBounce(this, g, p, '#9dff6a', dmg);
     if (Math.random() < 0.5) global.Sound.play('laugh');
@@ -2646,10 +3147,34 @@
       g.shake(10, 40);
       global.Sound.play('bossRoar');
       g.onBossDead();
+      return;
+    }
+    // Der Trick: mitten in der Liegestuetze draufgesprungen
+    if (liege) {
+      this.aufstehText = 'DIE ZÄHLT NICHT. NOCHMAL VON VORN.';
+      betaeuben(this, g, this.rage ? 100 : 120, 'PLATT! MITTEN IN DER LIEGESTÜTZE!', '#9dff6a');
     }
   };
 
-  /* ================= LEVEL-BOSSE: Mirkan, Lennart, Erfan ================= */
+  /* ================= LEVEL-BOSSE: Mirkan, Lennart, Erfan =================
+     Drei Bosse in einer Klasse — jeder mit eigenem Trick (Mario) und
+     eigenen Angriffen, die er je nach Lage waehlt (Hollow Knight):
+       MIRKAN   rast mit dem Mercedes los — und zwar bis zur Wand. Wer
+                ausweicht (drueberspringen), laesst ihn gegen die Mauer
+                krachen: MOTOR ABGEWUERGT, betaeubt. Mit den schwarzen
+                Felgen faehrt er auch rueckwaerts (es piept!), mit Nitro
+                prallt er zweimal von den Waenden ab, bevor er absaeuft.
+       LENNART  KREUZHEBEN: 200 Kilo hoch, auf den Boden (Bodenwellen), und
+                danach ist er fertig. Trinkt er seinen Shake, heilt er —
+                unterbrechen! Haut er Yusuf, posiert er vor dem Spiegel.
+       ERFAN    bewegt sich staendig, wie ein Hammerbruder: haelt Abstand,
+                weicht aus, stoesst mit dem Spiess zu (Anlauf, dann offen).
+                Was er wirft und daneben geht, steckt im Boden — dreimal sein
+                Koobideh essen, und er heult (betaeubt). Als PERSISCHER
+                KOENIG fliegt er auf einem Teppich (draufspringen holt ihn
+                runter), als SAFRAN-KOENIG kommt alles schneller und gleich
+                drei Stoesse hintereinander.
+     ================================================================= */
 
   var MINIBOSS = {
     mirkan: {
@@ -2667,9 +3192,17 @@
     erfan: {
       w: 26, h: 56, hp: 12, name: 'ERFAN', col: '#e8c24a',
       spr: ['erfan', 'erfan2'], scale: 2, stompY: 26, score: 2200,
-      rageName: 'SAFRAN-EKSTASE', rageCol: '#ff8a1a',
-      letzte: { name: 'SAMOWAR-RAUSCH', col: '#ff3a2a', ruf: 'GANZER SAMOWAR!', vorher: 'DER TEE IST FERTIG.' }
+      rageName: 'PERSISCHER KÖNIG', rageCol: '#c86aff',
+      letzte: { name: 'SAFRAN-KÖNIG', col: '#ffb000', ruf: 'SAFRAN-KÖNIG!', vorher: 'ICH HAB NOCH EIN GRAMM SAFRAN. EIN GANZES.' }
     }
+  };
+
+  /* Zustaende, in denen er nicht offen ist: Beruehrung tut weh, draufspringen
+     bringt nichts (bis auf den Teppich: von oben geht der). */
+  var MINI_ZU = {
+    mirkan: { charge: 1, nitro: 1, drift: 1, carjump: 1, rueckwaerts: 1 },
+    lennart: { charge: 1, slam: 1, doubleslam: 1, kreuzheben: 1 },
+    erfan: { stoss: 1, wirbel: 1, pfanne: 1 }
   };
 
   function MiniBoss(type, tx, ty) {
@@ -2697,23 +3230,30 @@
     this.rageName = d.rageName;
     this.rageCol = d.rageCol;
     this.landed = true;
+    this.gegessen = 0;          // Erfan: wie viel Koobideh Yusuf ihm vom Boden geklaut hat
+    this.shakeHerz = 0;         // Lennart: in welchem Herz der Shake schon dran war
+    this.abpraller = 0;         // Mirkan: Wandtreffer beim Nitro-Sturmlauf
+    this.spottPause = 0;
+    this.schwebt = false;
+    if (type === 'erfan') this.ausweichChance = 0.32;
     dreiHerzen(this, d.letzte);
   }
 
   MiniBoss.prototype.cx = function () { return this.x + this.w / 2; };
   MiniBoss.prototype.go = function (s, t) { this.state = s; this.timer = t; };
 
-  /** Was bei der Verwandlung passiert. */
+  /** Was bei der Verwandlung passiert (still = nach einem Tod, ohne Show). */
   MiniBoss.prototype.onTransform = function () {
     this.rage = true;
     // Mirkan: schwarze Felgen drauf. Damit ist er schneller (und hat die
     // alten zum Werfen). Die Ansage dazu kommt nur einmal.
     if (this.t === 'mirkan') { this.felgen = true; this.felgenAnsage = true; }
-    // Erfan: jede Form sieht anders aus (game.js zeichnet erfan_<look>);
-    // im Samowar-Rausch waechst er ausserdem wie Lennart
+    // Erfan: erst Persischer Koenig (Krone, Purpur), dann Safran-Koenig —
+    // der waechst dabei auch noch
     if (this.t === 'erfan') {
-      this.look = this.leben <= 1 ? 'samowar' : 'safran';
-      if (this.look === 'samowar' && this.scale < 3) {
+      this.look = this.leben <= 1 ? 'safrankoenig' : 'koenig';
+      this.schwebt = false;
+      if (this.look === 'safrankoenig' && this.scale < 3) {
         var fussE = this.y + this.h, mitteE = this.cx();
         this.scale = 3;
         this.w = 38; this.h = 84; this.stompY = 36;
@@ -2754,15 +3294,15 @@
     this.t0++;
     if (this.flash > 0) this.flash--;
     if (this.invuln > 0) this.invuln--;
-    if (this.dead) { bossDeath(this, g, this.def.col); return; }
+    if (this.spottPause > 0) this.spottPause--;
+    if (this.punchT > 0) this.punchT--;
+    if (this.dead) { this.schwebt = false; bossDeath(this, g, this.def.col); return; }
 
     var p = g.player;
     var dx = p.cx() - this.cx();
-    // Mirkan mit den neuen Felgen ist spuerbar schneller, im letzten
-    // Herz (Nitro, Pre-Workout, ganzer Samowar) alle noch einmal
-    var spd = this.rage ? (this.t === 'mirkan' ? (this.felgen ? 1.38 : 1.22) : 1.35) : 1;
+    // Mit jedem Herz schneller (Mirkan mit den neuen Felgen noch etwas mehr)
+    var spd = this.rage ? (this.t === 'mirkan' ? (this.felgen ? 1.38 : 1.22) : 1.3) : 1;
     if (this.phase >= 3) spd *= 1.12;
-    var i, s;
     this.timer--;
     rageSparks(this, g);
 
@@ -2788,46 +3328,123 @@
       case 'idle':
         this.vx *= 0.82;
         this.facing = dx > 0 ? 1 : -1;
+        if (komboWeiter(this, g)) break;
         if (this.timer <= 0) this.pick(g, dx);
         break;
 
+      case 'betaeubt':
+        tickBetaeubt(this, g);
+        break;
+
+      case 'spott':
+        this.vx *= 0.8;
+        if (this.t0 % 14 === 0) global.Sound.play('select');
+        if (this.timer <= 0) this.go('idle', 10);
+        break;
+
       case 'walk':
-        klugLaufen(this, g, (this.t === 'mirkan' ? 2.4 : 1.5) * spd);
+        if (this.t === 'erfan') this.tanzen(g, p, dx, spd);
+        else klugLaufen(this, g, (this.t === 'mirkan' ? 2.4 : 1.5) * spd);
         if (this.timer <= 0) this.go('idle', this.rage ? 10 : 20);
-        break;
-
-      case 'chargeprep':
-        this.vx *= 0.7;
-        if (this.timer <= 0) {
-          this.go('charge', this.t === 'mirkan' ? 44 : 32);
-          global.Sound.play('bossRoar');
-          g.shake(3, 8);
-        }
-        break;
-
-      case 'charge':
-        this.vx = this.facing * (this.t === 'mirkan' ? 6.0 : 3.8) * spd;
-        if (this.t === 'mirkan' && this.timer % 18 === 0) {
-          g.addProjectile('frage', this.cx() - 5, this.y + 2, -this.facing * 0.6, -2.2);
-        }
-        if (this.t === 'erfan' && this.timer % 11 === 0) {
-          g.addProjectile('rauch', this.cx() - 13 - this.facing * 24, this.y + this.h - 26, -this.facing * 0.3, -0.25);
-        }
-        if (this.t0 % 2 === 0) {
-          g.particles.spawn({
-            x: this.cx() - this.facing * this.w / 2, y: this.y + this.h - 2,
-            vx: -this.facing * 1.0, vy: -0.4, life: 18,
-            col: this.rage ? this.rageCol : '#c8c0b0', size: 2, grav: -0.01
-          });
-        }
-        if (this.timer <= 0) this.go('idle', this.rage ? 18 : 34);
         break;
 
       case 'jump':
         if (this.grounded && this.timer < 44) this.go('idle', this.rage ? 12 : 24);
         break;
 
-      /* ---------------- MIRKAN ---------------- */
+      default:
+        if (this.t === 'mirkan') this.mirkan(g, p, dx, spd);
+        else if (this.t === 'lennart') this.lennart(g, p, dx, spd);
+        else this.erfan(g, p, dx, spd);
+    }
+
+    if (this.schwebt) this.schweben(g);
+    else bossMove(this, g);
+
+    this.animT++;
+    var fast = (this.state === 'charge' || this.state === 'nitro' || this.state === 'drift' || this.state === 'wirbel' ||
+                this.state === 'stoss' || this.state === 'rueckwaerts');
+    if (this.animT > (fast ? 3 : 8)) { this.animT = 0; this.anim++; }
+
+    this.open = !MINI_ZU[this.t][this.state];
+    bossContact(this, g);
+  };
+
+  /* ---------------- MIRKAN ---------------- */
+
+  /** Gegen die Wand gekracht: beim Nitro erst abprallen, sonst Motor aus. */
+  MiniBoss.prototype.wand = function (g) {
+    g.shake(10, 24);
+    global.Sound.play('crash');
+    var wx = this.facing > 0 ? this.x + this.w : this.x;
+    g.particles.burst(wx, this.y + this.h / 2, 22, { col: '#ffd257', spread: 3.4, up: 1.2, life: 26 });
+    g.particles.burst(wx, this.y + 4, 10, { col: '#8e8880', spread: 1.6, up: 1.4, life: 40, grav: -0.02 });
+    if (this.state === 'nitro' && this.abpraller < 2) {
+      // Abprallen wie ein Flipperball — und gleich wieder los
+      this.abpraller++;
+      this.facing = -this.facing;
+      this.vx = this.facing * 2;
+      this.timer = 70;
+      g.floats.add(this.cx(), this.y - 16, this.abpraller === 1 ? 'NOCHMAL!' : 'UND NOCHMAL!', '#4ad8ff', 45);
+      return;
+    }
+    var rueck = this.state === 'rueckwaerts';
+    this.vx = (rueck ? 1 : -1) * this.facing * 2.4;
+    this.vy = -3;
+    this.aufstehText = rueck ? 'DER KOFFERRAUM! MEIN KOFFERRAUM!' : 'WO IST DER ZÜNDSCHLÜSSEL?';
+    betaeuben(this, g, this.phase >= 3 ? 95 : (this.rage ? 110 : 130),
+              rueck ? 'RÜCKWÄRTS IN DIE WAND!' : 'MOTOR ABGEWÜRGT!', '#ff8a5a');
+  };
+
+  MiniBoss.prototype.mirkan = function (g, p, dx, spd) {
+    var i, s;
+    switch (this.state) {
+      // Er laesst den Motor aufheulen: Qualm, Zittern — dann geht es los
+      case 'chargeprep':
+      case 'nitroprep':
+        this.vx *= 0.7;
+        if (this.t0 % 3 === 0) {
+          g.particles.spawn({ x: this.cx() - this.facing * this.w / 2, y: this.y + this.h - 4,
+                              vx: -this.facing * 1.4, vy: -0.6, life: 18,
+                              col: this.state === 'nitroprep' ? '#4ad8ff' : '#8e8880', size: 3, grav: -0.02 });
+        }
+        if (this.timer === 18) g.floats.add(this.cx(), this.y - 18, this.state === 'nitroprep' ? 'NITRO! WAS PASSIERT JETZT?' : 'BRUMM BRUMM!', '#ffd257', 40);
+        if (this.timer <= 0) {
+          this.abpraller = 0;
+          this.go(this.state === 'nitroprep' ? 'nitro' : 'charge', 170);
+          global.Sound.play(this.state === 'nitro' ? 'nitro' : 'bossRoar');
+          g.shake(3, 8);
+        }
+        break;
+
+      // Volle Kraft geradeaus — bis zur Wand (dort kracht es)
+      case 'charge':
+      case 'nitro':
+        var nitro = this.state === 'nitro';
+        this.vx = this.facing * (nitro ? 7.2 : 6.0) * spd;
+        if (this.timer % 20 === 0) g.addProjectile('frage', this.cx() - 5, this.y + 2, -this.facing * 0.6, -2.2);
+        if (this.t0 % 2 === 0) {
+          g.particles.spawn({ x: this.cx() - this.facing * this.w / 2, y: this.y + this.h - 2,
+                              vx: -this.facing * 1.0, vy: -0.4, life: 18,
+                              col: nitro ? '#4ad8ff' : (this.rage ? this.rageCol : '#c8c0b0'), size: 2, grav: -0.01 });
+        }
+        if (anWand(this, g, this.vx)) { this.wand(g); break; }
+        if (this.timer <= 0) this.go('idle', this.rage ? 18 : 30);
+        break;
+
+      // Rueckwaerts: es piept, die Rueckfahrlichter gehen an — und er rammt
+      case 'rueckprep':
+        this.vx *= 0.7;
+        this.facing = dx > 0 ? -1 : 1;              // die Nase zeigt weg von Yusuf
+        if (this.timer % 8 === 0) global.Sound.play('beep');
+        if (this.timer === 28) g.floats.add(this.cx(), this.y - 18, 'PIEP. PIEP. PIEP.', '#ffffff', 50);
+        if (this.timer <= 0) { this.go('rueckwaerts', 150); global.Sound.play('bossRoar'); }
+        break;
+      case 'rueckwaerts':
+        this.vx = -this.facing * 5.4 * spd;
+        if (anWand(this, g, this.vx)) { this.wand(g); break; }
+        if (this.timer <= 0) this.go('idle', 24);
+        break;
 
       case 'fragen':
         this.vx *= 0.8;
@@ -2926,7 +3543,52 @@
         if (this.timer <= 0) this.go('idle', 16);
         break;
 
-      /* ---------------- LENNART ---------------- */
+      default:
+        this.go('idle', 20);
+    }
+  };
+
+  MiniBoss.prototype.pickMirkan = function (g) {
+    var R = this.rage, P3 = this.phase >= 3, self = this;
+    var w = waehle(this, g, [
+      { s: 'chargeprep', t: R ? 18 : 26, w: function (l) { return l.weit ? 5 : (l.mittel ? 3 : 1); } },
+      { s: 'fragen', t: R ? 34 : 38, w: function (l) { return l.mittel ? 3 : (l.weit ? 2 : 0.6); } },
+      { s: 'hupe', t: 40, w: function (l) { return l.nah ? 5 : 0.3; } },
+      { s: 'carjump', t: 50, w: function (l) { return (l.oben || l.ueber) ? 5 : (l.nah ? 2 : 0.8); } },
+      { s: 'walk', t: 36, w: function (l) { return l.weit && !R ? 1 : 0.2; } },
+      R && self.felgen ? { s: 'felgenwurf', t: 44, w: function (l) { return l.nah ? 1 : 3; } } : null,
+      R ? { s: 'drift', t: 97, w: function (l) { return l.weit ? 0.8 : 2; } } : null,
+      R ? { s: 'rueckprep', t: 34, w: function (l) { return l.hinten ? 5 : 1.2; } } : null,
+      R ? { s: 'hupkonzert', t: 66, w: function (l) { return l.nah ? 2.5 : 0.5; } } : null,
+      P3 ? { s: 'nitroprep', t: 26, w: function (l) { return l.weit ? 5 : 3; } } : null
+    ]);
+    // Im letzten Herz: erst wegschieben, dann sofort losrasen
+    if (P3 && w && w.s === 'hupe' && Math.random() < 0.6) kombo(this, [['chargeprep', 14]]);
+  };
+
+  /* ---------------- LENNART ---------------- */
+
+  MiniBoss.prototype.lennart = function (g, p, dx, spd) {
+    var i;
+    switch (this.state) {
+      case 'chargeprep':
+        this.vx *= 0.7;
+        if (this.timer <= 0) {
+          this.go('charge', 32);
+          global.Sound.play('bossRoar');
+          g.shake(3, 8);
+        }
+        break;
+
+      case 'charge':
+        this.vx = this.facing * 3.8 * spd;
+        if (this.t0 % 2 === 0) {
+          g.particles.spawn({ x: this.cx() - this.facing * this.w / 2, y: this.y + this.h - 2,
+                              vx: -this.facing * 1.0, vy: -0.4, life: 18,
+                              col: this.rage ? this.rageCol : '#c8c0b0', size: 2, grav: -0.01 });
+        }
+        if (this.timer <= 0) this.go('idle', this.rage ? 18 : 34);
+        break;
 
       case 'hantel':
         this.vx *= 0.8;
@@ -2942,6 +3604,16 @@
                        ll[(Math.random() * ll.length) | 0], '#ffd257', 60);
         }
         if (this.timer <= 0) this.go('idle', this.rage ? 16 : 30);
+        break;
+
+      // Der Curl: Hantel hoch ... und vor die Brust geschwungen. Nur ganz nah.
+      case 'curl':
+        this.vx *= 0.7;
+        if (this.timer === 6) {
+          schlag(this, g, 26, this.h * 0.6, this.h * 0.15, 8, 3.2);
+          g.floats.add(this.cx(), this.y - 12, 'CURL!', '#ffd257', 30);
+        }
+        if (this.timer <= 0) this.go('idle', this.rage ? 12 : 22);
         break;
 
       // Springt hoch und kommt mit vollem Gewicht runter
@@ -2978,9 +3650,7 @@
       // MASSEPHASE: Hanteln fallen von oben
       case 'hantelregen':
         this.vx *= 0.8;
-        if (this.timer === 70) {
-          g.floats.add(this.cx(), this.y - 14, 'HANTELN VON OBEN!', '#ff6a4a', 60);
-        }
+        if (this.timer === 70) g.floats.add(this.cx(), this.y - 14, 'HANTELN VON OBEN!', '#ff6a4a', 60);
         if (this.timer % 12 === 0) rainFromSky(g, 'hantel', 1.2);
         if (this.timer <= 0) this.go('idle', 18);
         break;
@@ -3009,20 +3679,165 @@
         }
         break;
 
-      /* ---------------- ERFAN ---------------- */
+      // KREUZHEBEN: buecken ... 200 Kilo hoch ... und auf den Boden.
+      // Danach ist er fertig — das ist die Gelegenheit.
+      case 'kreuzprep':
+        this.vx *= 0.6;
+        if (this.timer === 50) {
+          g.floats.add(this.cx(), this.y - 18, 'KREUZHEBEN! 200 KILO!', '#ffd257', 70);
+          global.Sound.play('growl');
+        }
+        if (this.timer <= 0) { this.go('kreuzheben', 40); global.Sound.play('bossRoar'); }
+        break;
+      case 'kreuzheben':
+        this.vx = 0;
+        if (this.timer === 12) {
+          // Und runter damit. Die ganze Halle bebt.
+          groundWaves(this, g, this.rage ? '#ff6a4a' : '#e8b894', 3.8, this.rage ? 2 : 1);
+          g.shake(12, 26);
+          for (i = 0; i < 2; i++) rainFromSky(g, 'hantel', 1.4);
+        }
+        if (this.timer <= 0) {
+          this.aufstehText = 'DAS WAR EIN PR, BRO.';
+          betaeuben(this, g, this.phase >= 3 ? 95 : (this.rage ? 110 : 125), 'PUH... ZU SCHWER.', '#e8b894');
+        }
+        break;
+
+      // Der Shake: er trinkt und wird wieder fit. Unterbrechen!
+      case 'shake':
+        this.vx *= 0.6;
+        if (this.timer % 35 === 0 && this.timer > 0) {
+          var vorher = this.hp;
+          this.hp = Math.min(this.maxHp, this.hp + this.maxHp * 0.12);
+          if (this.hp > vorher) {
+            g.floats.add(this.cx(), this.y - 10, '+PROTEIN', '#8cd85a', 40);
+            g.particles.burst(this.cx(), this.y + 10, 8, { col: '#8cd85a', spread: 1.6, up: 1, life: 24 });
+            global.Sound.play('heal');
+          }
+        }
+        if (this.timer <= 0) this.go('idle', 14);
+        break;
+
+      default:
+        this.go('idle', 20);
+    }
+  };
+
+  MiniBoss.prototype.pickLennart = function (g) {
+    var R = this.rage, P3 = this.phase >= 3, self = this;
+    var shakeDarf = this.hp < this.maxHp * 0.55 && this.shakeHerz !== this.leben;
+    var w = waehle(this, g, [
+      { s: 'hantel', t: R ? 34 : 40, w: function (l) { return l.nah ? 1 : 3; } },
+      { s: 'curl', t: 24, w: function (l) { return l.nah ? 5 : 0; } },
+      { s: 'slam', t: 48, w: function (l) { return (l.ueber || l.oben) ? 5 : (l.nah ? 2 : 1.2); } },
+      { s: 'chargeprep', t: R ? 18 : 24, w: function (l) { return l.weit ? 4 : (l.mittel ? 2 : 0.5); } },
+      { s: 'kreuzprep', t: 56, w: function (l) { return l.nah ? 1 : 2; } },
+      !this.pumped && !R ? { s: 'pushups', t: 76, w: function (l) { return l.weit ? 1 : 0.4; }, dann: function (b) { b.spin = 0; } } : null,
+      shakeDarf ? { s: 'shake', t: 140, w: 6, dann: function (b, gg) {
+        b.shakeHerz = b.leben;
+        gg.floats.add(b.cx(), b.y - 18, 'SHAKE-PAUSE! (UNTERBRICH IHN!)', '#8cd85a', 90);
+      } } : null,
+      { s: 'walk', t: 40, w: function (l) { return l.weit ? 1 : 0.2; } },
+      R ? { s: 'doubleslam', t: 90, w: function (l) { return l.nah || l.mittel ? 2 : 1; } } : null,
+      R ? { s: 'hantelregen', t: 72, w: function (l) { return l.oben ? 4 : 1.4; } } : null,
+      R ? { s: 'shakewurf', t: 26, w: function (l) { return l.nah ? 0.5 : 3; } } : null
+    ]);
+    // Pre-Workout: alles kommt im Doppelpack
+    if (P3 && w) {
+      if (w.s === 'chargeprep' && Math.random() < 0.6) kombo(this, [['slam', 48]]);
+      else if (w.s === 'curl' && Math.random() < 0.6) kombo(this, [['curl', 18], ['slam', 48]]);
+    }
+  };
+
+  /* ---------------- ERFAN ---------------- */
+
+  /** Wie ein Hammerbruder: Abstand halten, mal ran, mal weg, kleine Hopser. */
+  MiniBoss.prototype.tanzen = function (g, p, dx, spd) {
+    var ad = Math.abs(dx), soll = this.phase >= 3 ? 110 : 140;
+    var weg = ad < soll - 30 ? -1 : (ad > soll + 40 ? 1 : 0);
+    this.facing = dx > 0 ? 1 : -1;
+    this.vx = this.facing * weg * 2.1 * spd;
+    if (weg < 0 && anWand(this, g, this.vx)) this.vx = 0;
+    if (this.grounded && this.t0 % 34 === 0 && Math.random() < 0.5) { this.vy = -4.6; global.Sound.play('jump'); }
+  };
+
+  /** Der fliegende Teppich: schwebt ueber dem Boden, prallt an den Waenden ab.
+      So hoch, dass Yusuf drunter durchlaufen kann — und so niedrig, dass er
+      mit dem Doppelsprung oben auf Erfan landet. */
+  MiniBoss.prototype.schweben = function (g) {
+    var boden = this.floorRow * T - this.h;
+    var ziel = this.state === 'teppich' ? (this.scale >= 3 ? 30 : 42) : 0;
+    var th = this.teppichH || 0;
+    th += Math.max(-2.2, Math.min(2.2, ziel - th));
+    this.teppichH = th;
+    this.y = boden - th + (th > 8 ? Math.sin(this.t0 * 0.08) * 3 : 0);
+    this.vy = 0;
+    this.x += this.vx;
+    if (g.arena) {
+      var lo = g.arena.x + 6, hi = g.arena.x + g.arena.w - 6;
+      if (this.x < lo) { this.x = lo; this.facing = 1; this.vx = Math.abs(this.vx); }
+      if (this.x + this.w > hi) { this.x = hi - this.w; this.facing = -1; this.vx = -Math.abs(this.vx); }
+    }
+    this.grounded = th <= 0;
+  };
+
+  MiniBoss.prototype.erfan = function (g, p, dx, spd) {
+    var i;
+    switch (this.state) {
+      // Rueckwaerts weghuepfen, wenn Yusuf zu nah kommt — und gleich werfen
+      case 'rueckzug':
+        if (this.timer === 18) {
+          this.vy = -7; this.vx = -(dx > 0 ? 1 : -1) * 3.4 * spd;
+          if (anWand(this, g, this.vx * 10)) this.vx = -this.vx * 0.5;
+          global.Sound.play('jump');
+        }
+        if (this.grounded && this.timer < 12) {
+          this.go('idle', 4);
+          if (Math.random() < 0.7) kombo(this, [['spiesse', 26]]);
+        }
+        break;
 
       case 'spiesse':
         this.vx *= 0.8;
         if (this.timer === 18) {
-          var sn = this.rage ? 4 : 2;
+          var sn = this.phase >= 3 ? 4 : (this.rage ? 3 : 2);
           for (i = 0; i < sn; i++) {
-            g.addProjectile('spiess', this.cx() - 8, this.y + 14 + i * 9,
-                            this.facing * (3.0 + i * 0.4) * spd, -0.5);
+            // Im Bogen — was nicht trifft, steckt danach im Boden
+            var sp = g.addProjectile('spiess', this.cx() - 8, this.y + 12 + i * 6,
+                                     this.facing * (2.4 + i * 0.6) * spd, -2.6 - i * 0.5);
+            if (sp) sp.grav = 0.12;
           }
           global.Sound.play('shoot');
-          g.floats.add(this.cx(), this.y - 14, 'KUBIDE FLIEGT!', '#e8c24a', 60);
+          g.floats.add(this.cx(), this.y - 14, 'KOOBIDEH FLIEGT!', '#e8c24a', 60);
         }
-        if (this.timer <= 0) this.go('idle', this.rage ? 16 : 30);
+        if (this.timer <= 0) this.go('idle', this.rage ? 14 : 26);
+        break;
+
+      // Der Stoss: Anlauf (der Spiess blitzt), dann schnell nach vorn, danach offen
+      case 'stossprep':
+        this.vx *= 0.6;
+        this.facing = dx > 0 ? 1 : -1;
+        if (this.timer === 20) global.Sound.play('select');
+        if (this.timer <= 0) {
+          // Feste Reichweite wie bei Hornet: bis knapp hinter Yusuf, nicht weiter
+          this.stossZiel = p.cx() + this.facing * 40;
+          this.go('stoss', 22);
+          global.Sound.play('shoot');
+        }
+        break;
+      case 'stoss':
+        this.vx = this.facing * 6.2 * spd;
+        if ((this.cx() - this.stossZiel) * this.facing > 0) this.timer = Math.min(this.timer, 1);
+        if (this.t0 % 2 === 0) {
+          g.particles.spawn({ x: this.cx() - this.facing * 10, y: this.y + this.h * 0.45, vx: -this.facing, vy: 0,
+                              life: 12, col: this.rage ? this.rageCol : '#ffcf4a', size: 2, grav: 0 });
+        }
+        if (this.timer <= 0 || anWand(this, g, this.vx)) { this.vx = 0; this.go('stossende', 30); }
+        break;
+      case 'stossende':
+        this.vx *= 0.7;
+        if (this.timer === 26) g.floats.add(this.cx(), this.y - 12, 'HUFF.', '#c8c0d8', 30);
+        if (this.timer <= 0) this.go('idle', 8);
         break;
 
       case 'safran':
@@ -3055,7 +3870,7 @@
 
       // Er springt mit der Pfanne und schickt Wellen ueber den Boden
       case 'pfanne':
-        if (this.timer === 28) { this.vy = -7.8; this.landed = false; }
+        if (this.timer === 28) { this.vy = -7.8; this.vx = (dx > 0 ? 1 : -1) * 1.6; this.landed = false; }
         if (this.grounded && !this.landed && this.vy >= 0 && this.timer < 26) {
           this.landed = true;
           groundWaves(this, g, '#e8c24a', 3.6, this.rage ? 2 : 1);
@@ -3064,29 +3879,30 @@
         if (this.timer <= 0 && (this.grounded || this.timer < -90)) this.go('idle', 24);
         break;
 
-      // SAFRAN-EKSTASE: Kubide faellt vom Himmel
+      // Koobideh faellt vom Himmel (und bleibt im Boden stecken)
       case 'spiessregen':
         this.vx *= 0.8;
         if (this.timer === 70) {
-          g.floats.add(this.cx(), this.y - 14, 'KUBIDE-REGEN!', '#ffcf4a', 60);
+          g.floats.add(this.cx(), this.y - 14, 'KOOBIDEH-REGEN!', '#ffcf4a', 60);
         }
         if (this.timer % 10 === 0) rainFromSky(g, 'spiess', 1.8);
         if (this.timer <= 0) this.go('idle', 16);
         break;
 
-      // SAFRAN-EKSTASE: er dreht sich und verteilt Spiesse im Kreis
+      // Er dreht sich und verteilt Spiesse im Kreis
       case 'wirbel':
         this.facing = ((this.t0 >> 2) & 1) ? 1 : -1;
-        this.vx = (dx > 0 ? 1 : -1) * 1.7;
+        this.vx = (dx > 0 ? 1 : -1) * 1.9;
         if (this.timer % 8 === 0) {
           var an = this.t0 * 0.8;
-          g.addProjectile('spiess', this.cx() - 8, this.y + this.h * 0.35,
-                          Math.cos(an) * 3.2, -Math.abs(Math.sin(an)) * 2.6 - 0.6);
+          var ws = g.addProjectile('spiess', this.cx() - 8, this.y + this.h * 0.35,
+                                   Math.cos(an) * 3.2, -Math.abs(Math.sin(an)) * 2.6 - 0.6);
+          if (ws) ws.grav = 0.1;
         }
         if (this.timer <= 0) this.go('idle', 20);
         break;
 
-      // SAFRAN-EKSTASE: Dampf aus dem Samowar
+      // Dampf aus dem Samowar
       case 'samowar':
         this.vx *= 0.8;
         if (this.timer === 20) {
@@ -3099,84 +3915,99 @@
         }
         if (this.timer <= 0) this.go('idle', 18);
         break;
+
+      // PERSISCHER KOENIG: der fliegende Teppich. Erst pfeift er ihn herbei ...
+      case 'teppichprep':
+        this.vx *= 0.7;
+        if (this.timer === 30) { g.floats.add(this.cx(), this.y - 18, 'TEPPICH! ZU MIR!', '#c86aff', 50); global.Sound.play('select'); }
+        if (this.timer <= 0) {
+          this.schwebt = true; this.teppichH = 0;
+          this.vx = (dx > 0 ? 1 : -1) * 2.0 * spd;
+          this.go('teppich', 240);
+          global.Sound.play('doubleJump');
+        }
+        break;
+      // ... dann fliegt er drueber und wirft Koobideh und Reis nach unten.
+      // Von oben draufspringen holt ihn runter.
+      case 'teppich':
+        if (Math.abs(this.vx) < 1) this.vx = this.facing * 2.0 * spd;
+        if (this.timer % (this.phase >= 3 ? 20 : 28) === 0) {
+          var tz = p.cx() + p.vx * 18 - this.cx();
+          var ts = g.addProjectile('spiess', this.cx() - 8, this.y + this.h, Math.max(-2.6, Math.min(2.6, tz / 30)), 1.6);
+          if (ts) ts.grav = 0.12;
+          global.Sound.play('shoot');
+        }
+        if (this.timer % 50 === 25) {
+          for (i = 0; i < 3; i++) g.addProjectile('reis', this.cx() - 3, this.y + this.h, (i - 1) * 1.2, 0.5);
+        }
+        if (this.timer <= 0) this.go('landung', 60);
+        break;
+      case 'landung':
+        this.vx *= 0.92;
+        if ((this.teppichH || 0) <= 0.5 || this.timer <= 0) {
+          this.schwebt = false; this.teppichH = 0;
+          this.go('idle', 26);
+          g.floats.add(this.cx(), this.y - 14, 'LANDUNG. KÖNIGLICH.', '#c86aff', 40);
+        }
+        break;
+
+      default:
+        this.go('idle', 20);
     }
-
-    bossMove(this, g);
-
-    this.animT++;
-    var fast = (this.state === 'charge' || this.state === 'drift' || this.state === 'wirbel');
-    if (this.animT > (fast ? 3 : 8)) { this.animT = 0; this.anim++; }
-
-    this.open = !(this.state === 'charge' || this.state === 'carjump' ||
-                  this.state === 'slam' || this.state === 'doubleslam' ||
-                  this.state === 'drift' || this.state === 'wirbel');
-    bossContact(this, g);
   };
 
-  MiniBoss.prototype.pick = function (g, dx) {
-    var r = Math.random();
-    this.facing = dx > 0 ? 1 : -1;
-    this.landed = true;
-    var R = this.rage;
+  MiniBoss.prototype.pickErfan = function (g) {
+    var R = this.rage, P3 = this.phase >= 3;
+    var w = waehle(this, g, [
+      { s: 'spiesse', t: R ? 30 : 36, w: function (l) { return l.nah ? 1 : (l.mittel ? 4 : 3); } },
+      { s: 'stossprep', t: R ? 24 : 30, w: function (l) { return l.mittel ? 4 : (l.nah ? 2 : 1); } },
+      { s: 'rueckzug', t: 22, w: function (l) { return l.nah && !l.bossAnWand ? 5 : 0; } },
+      { s: 'walk', t: 50, w: function (l) { return l.weit ? 2.5 : (l.nah ? 1.5 : 0.8); } },
+      { s: 'reis', t: R ? 36 : 42, w: function (l) { return l.oben ? 3 : 1.5; } },
+      { s: 'safran', t: R ? 36 : 40, w: function (l) { return l.nah ? 2 : 1; } },
+      { s: 'pfanne', t: 56, w: function (l) { return l.ueber ? 5 : (l.nah ? 2 : 0.8); } },
+      R ? { s: 'spiessregen', t: 70, w: function (l) { return l.oben ? 4 : 1.5; } } : null,
+      R ? { s: 'wirbel', t: 80, w: function (l) { return l.nah ? 3 : 1; } } : null,
+      R ? { s: 'teppichprep', t: 36, w: 1.8 } : null,
+      P3 ? { s: 'samowar', t: 40, w: 1.2 } : null
+    ]);
+    // Safran-Koenig: drei Stoesse hintereinander
+    if (P3 && w && w.s === 'stossprep' && Math.random() < 0.65) kombo(this, [['stossprep', 18], ['stossprep', 18]]);
+  };
 
-    if (this.t === 'mirkan') {
-      if (!R) {
-        if (r < 0.26) this.go('fragen', 38);
-        else if (r < 0.44) this.go('hupe', 40);
-        else if (r < 0.70) this.go('chargeprep', 22);
-        else if (r < 0.88) this.go('carjump', 50);
-        else this.go('walk', 40);
-      } else {
-        // Neu mit den schwarzen Felgen: der Felgenwurf. Nie zweimal hintereinander.
-        if (this.felgen && this.last !== 'felgenwurf' && r < 0.22) this.go('felgenwurf', 44);
-        else if (r < 0.36) this.go('fragen', 36);
-        else if (r < 0.50) this.go('hupkonzert', 66);
-        else if (r < 0.68) this.go('drift', 97);
-        else if (r < 0.84) this.go('chargeprep', 16);
-        else this.go('carjump', 50);
-        this.last = this.state;
-      }
-    } else if (this.t === 'lennart') {
-      if (!R) {
-        if (r < 0.30) this.go('hantel', 40);
-        else if (r < 0.50) this.go('slam', 48);
-        else if (r < 0.64) this.go('chargeprep', 24);
-        else if (r < 0.78 && !this.pumped) { this.go('pushups', 76); this.spin = 0; }
-        else if (r < 0.90) this.go('walk', 42);
-        else { this.go('jump', 58); this.vy = -9.2; this.vx = this.facing * 2.0; }
-      } else {
-        if (r < 0.22) this.go('hantel', 34);
-        else if (r < 0.40) this.go('doubleslam', 90);
-        else if (r < 0.56) this.go('hantelregen', 72);
-        else if (r < 0.72) this.go('shakewurf', 26);
-        else if (r < 0.86) this.go('chargeprep', 18);
-        else this.go('slam', 48);
-      }
-    } else {
-      if (!R) {
-        if (r < 0.24) this.go('spiesse', 38);
-        else if (r < 0.42) this.go('safran', 40);
-        else if (r < 0.58) this.go('reis', 42);
-        else if (r < 0.78) this.go('pfanne', 56);
-        else if (r < 0.90) { this.go('jump', 56); this.vy = -9.0; this.vx = this.facing * 2.2; }
-        else this.go('walk', 40);
-      } else {
-        // Im Samowar-Rausch: auch ein Sturmlauf, der Dampf hinter sich laesst
-        if (this.phase >= 3 && r < 0.16) this.go('chargeprep', 22);
-        else if (r < 0.18) this.go('spiesse', 32);
-        else if (r < 0.34) this.go('wirbel', 80);
-        else if (r < 0.50) this.go('spiessregen', 70);
-        else if (r < 0.62) this.go('samowar', 40);
-        else if (r < 0.76) this.go('reis', 36);
-        else if (r < 0.90) this.go('pfanne', 50);
-        else this.go('safran', 36);
-      }
+  /** Yusuf hat ein Koobideh vom Boden gegessen. Beim dritten heult Erfan. */
+  MiniBoss.prototype.koobidehGegessen = function (g) {
+    if (this.t !== 'erfan' || this.dead) return;
+    this.gegessen++;
+    var SAETZE = ['DAS WAR FÜR DIE GÄSTE!', 'NICHT NOCH EINS! DAS IST MEIN BESTES!'];
+    if (this.gegessen < 3) {
+      sagt(this, g, SAETZE[this.gegessen - 1], '#ffcf4a', 70);
+      return;
     }
-    if (Math.abs(dx) > 130 && this.state === 'fragen') this.go('walk', 40);
+    this.gegessen = 0;
+    if (this.state === 'transform') return;
+    this.aufstehText = 'ICH MACH NEUES. NUR FÜR MICH.';
+    betaeuben(this, g, this.phase >= 3 ? 110 : 140, 'MEIN KOOBIDEH! DU ISST ES EINFACH!', '#ffcf4a');
+  };
+
+  MiniBoss.prototype.pick = function (g) {
+    if (this.t === 'mirkan') this.pickMirkan(g);
+    else if (this.t === 'lennart') this.pickLennart(g);
+    else this.pickErfan(g);
+  };
+
+  /** Er hat Yusuf erwischt: Lennart posiert, Mirkan fragt, Erfan tanzt. */
+  MiniBoss.prototype.yusufGetroffen = function (g) {
+    if (this.state === 'betaeubt' || this.schwebt) return;
+    if (this.t === 'lennart') spott(this, g, 'SIEHST DU DAS? DAS IST DER PUMP.', '#ffd257', 70);
+    else if (this.t === 'mirkan') spott(this, g, 'TUT DAS WEH? WIE SEHR? AUF EINER SKALA?', '#dfe4f0', 50);
+    else spott(this, g, 'IN DER KÜCHE GEWINNT DER KOCH.', '#ffcf4a', 50);
   };
 
   MiniBoss.prototype.hit = function (g, dmg, p) {
     if (this.invuln > 0 || this.dead || this.state === 'transform') return;
+    // Vom Teppich holt man ihn nur, wenn er schon oben ist (nicht beim Abheben)
+    var warShake = this.state === 'shake', warTeppich = this.state === 'teppich' && (this.teppichH || 0) > 28;
     this.hp -= dmg;
     bossBounce(this, g, p, this.def.col, dmg);
     // Erstes Herz leer — Mirkan: erst die Ansage (neue Felgen), dann
@@ -3187,19 +4018,38 @@
       naechstesLeben(this, g, false, function () { g.onMirkanFelgen(self); });
       return;
     }
-    if (herzWeg(this, g)) return;
+    if (herzWeg(this, g)) { this.schwebt = false; return; }
     if (this.hp <= 0) {
+      this.schwebt = false;
       this.dead = true; this.deadTimer = 0; this.vy = -6;
       (p || g.player).score += this.def.score;
       g.shake(8, 30);
       global.Sound.play('bossRoar');
       g.onMiniDead(this.t);
+      return;
+    }
+    // Lennarts Shake unterbrochen, Erfan vom Teppich geholt: kurz betaeubt
+    if (warShake) {
+      this.aufstehText = 'MEIN SHAKE...';
+      betaeuben(this, g, 70, 'MEIN SHAKE! ÜBERALL!', '#8cd85a');
+    } else if (warTeppich) {
+      this.schwebt = false; this.teppichH = 0;
+      this.aufstehText = 'DER TEPPICH WAR GELIEHEN.';
+      betaeuben(this, g, 90, 'VOM TEPPICH GEFALLEN!', '#c86aff');
     }
   };
 
   /* ================= ESAT — der allerletzte Kampf =================
      Haerter als alle davor. Bei halber Energie nimmt er Snus: er wird
      groesser, muskuloeser und schneller und stampft den Boden weg.
+     Seit 02.10. (Esat: "alle Bosskaempfe individuell"):
+       KONTER      er verschraenkt die Arme und wartet. Wer jetzt drauf-
+                   springt, wird abgefangen und weggeschleudert (Hollow
+                   Knight: Konterhaltung). Abwarten, dann ist er offen.
+       KOHLE       Shisha-Kohle bricht in einer Reihe aus dem Boden, von
+                   ihm bis zu Yusuf. Am Boden warnt die Glut vorher.
+       Sein Trick  die KI-Agenten: wer zwei davon erledigt, ueberlastet
+       (Mario)     seinen Server — BLUESCREEN, er ist betaeubt.
      ============================================================== */
 
   function BossEsat(tx, ty) {
@@ -3220,6 +4070,9 @@
     this.open = true;
     this.stompY = 32;
     this.landed = true;
+    this.spottPause = 0;
+    this.agentenWeg = 0;       // erledigte Agenten (zwei = Bluescreen)
+    this.agentenDa = 0;
     this.rageName = 'SNUS AKTIV';
     this.rageCol = '#2fd39e';
     dreiHerzen(this, { name: 'JETS IM ANFLUG', col: '#6ae0ff', ruf: 'ICH KENN DA JEMANDEN!' });
@@ -3231,6 +4084,7 @@
   /** Der Snus wirkt: groesser, muskuloeser, schneller. */
   BossEsat.prototype.onTransform = function () {
     this.rage = true;
+    if (this.buff) return;
     this.buff = true;
     var footY = this.y + this.h, mid = this.cx();
     this.w = 36; this.h = 86; this.stompY = 42;
@@ -3245,10 +4099,36 @@
     g.addProjectile('jet', jx, g.cam.y + 30 + (fromLeft ? 0 : 16), jv, 0);
   };
 
+  BossEsat.prototype.yusufGetroffen = function (g) {
+    var l = ['ICH HAB SCHON BESTELLT. FÜR DICH NICHT.', 'DAS HAT DIE KI GEMACHT. NICHT ICH.', 'BRUDER. ENTSPANN DICH.'];
+    spott(this, g, l[(Math.random() * l.length) | 0], '#2fd39e', 54);
+  };
+
+  /** Wie viele seiner Agenten sind weg? Zwei erledigt = Bluescreen. */
+  BossEsat.prototype.agentenZaehlen = function (g) {
+    var n = 0;
+    for (var i = 0; i < g.enemies.length; i++) {
+      var en = g.enemies[i];
+      if (en && en.t === 'agent' && !en.dead) n++;
+    }
+    if (n < this.agentenDa && this.state !== 'transform') {
+      this.agentenWeg += this.agentenDa - n;
+      if (this.agentenWeg === 1) sagt(this, g, 'HEY! DER HAT GERADE GELERNT!', '#2fd39e', 60);
+    }
+    this.agentenDa = n;
+    if (this.agentenWeg >= 2 && this.state !== 'transform' && this.state !== 'betaeubt' && !this.dead) {
+      this.agentenWeg = 0;
+      this.aufstehText = 'NEUSTART... 3 %... 100 %. SO.';
+      betaeuben(this, g, this.phase >= 3 ? 100 : 120, 'SERVER ÜBERLASTET! BLUESCREEN!', '#4a8aff');
+      this.bluescreen = true;
+    }
+  };
+
   BossEsat.prototype.update = function (g) {
     this.t0++;
     if (this.flash > 0) this.flash--;
     if (this.invuln > 0) this.invuln--;
+    if (this.spottPause > 0) this.spottPause--;
     if (this.dead) { bossDeath(this, g, '#2fd39e'); return; }
 
     var p = g.player;
@@ -3257,12 +4137,14 @@
     var i;
     this.timer--;
     rageSparks(this, g);
+    this.agentenZaehlen(g);
+    if (this.state !== 'betaeubt') this.bluescreen = false;
 
     switch (this.state) {
       // Er nimmt Snus. Das ist die Verwandlung.
       case 'transform':
         if (this.timer === 88) {
-          g.floats.add(this.cx(), this.y - 14, this.leben > 1 ? 'MOMENT. KURZ SNUS.' : 'NOCH EINER. UND EIN ANRUF.', '#ffd257', 80);
+          sagt(this, g, this.leben > 1 ? 'MOMENT. KURZ SNUS.' : 'NOCH EINER. UND EIN ANRUF.', '#ffd257', 80);
           global.Sound.play('select');
         }
         if (tickTransform(this, g, 'SNUS WIRKT!', this.rageCol)) {
@@ -3275,7 +4157,21 @@
       case 'idle':
         this.vx *= 0.85;
         this.facing = dx > 0 ? 1 : -1;
-        if (this.timer <= 0) this.pickAttack(g, dx);
+        if (komboWeiter(this, g)) break;
+        if (this.timer <= 0) this.pickAttack(g);
+        break;
+
+      case 'betaeubt':
+        if (this.bluescreen && this.t0 % 6 === 0) {
+          g.particles.spawn({ x: this.cx() + (Math.random() - 0.5) * 14, y: this.y + 10, vx: 0, vy: -0.6, life: 20,
+                              col: (this.t0 % 12) ? '#4a8aff' : '#ffffff', size: 3, grav: 0 });
+        }
+        tickBetaeubt(this, g);
+        break;
+
+      case 'spott':
+        this.vx *= 0.8;
+        if (this.timer <= 0) this.go('idle', 10);
         break;
 
       case 'walk':
@@ -3294,23 +4190,18 @@
                             this.facing * (0.5 + i * 0.15), -0.12);
           }
           global.Sound.play('shoot');
-          g.floats.add(this.cx(), this.y - 10, 'ZIEH MAL DURCH', '#b8b0c8', 50);
+          sagt(this, g, 'ZIEH MAL DURCH', '#b8b0c8', 50, 10);
         }
         if (this.timer <= 0) this.go('idle', this.rage ? 18 : 34);
         break;
 
-      // KI-Agenten spawnen — hoechstens vier gleichzeitig
+      // KI-Agenten — hoechstens zwei (mit Snus drei) gleichzeitig
       case 'agents':
         this.vx *= 0.8;
         if (this.timer === 20) {
-          var live = 0;
-          for (var li = 0; li < g.enemies.length; li++) {
-            var en = g.enemies[li];
-            if (en && en.t === 'agent' && !en.dead) live++;
-          }
-          // Hoechstens zwei (in Rage drei) gleichzeitig: vorher machten die
-          // Agenten mehr Schaden als Esat selbst
-          var count = Math.min(this.rage ? 2 : 1, (this.rage ? 3 : 2) - live);
+          var live = this.agentenDa;
+          // Einer pro Ruf, hoechstens zwei gleichzeitig — zwei erledigt = Bluescreen
+          var count = Math.min(1, 2 - live);
           for (var a = 0; a < count; a++) {
             var e = new Enemy('agent', 0, 0);
             e.x = this.cx() - 7 + (a - 1) * 22;
@@ -3318,8 +4209,9 @@
             e.homeX = e.x; e.homeY = e.y;
             g.enemies.push(e);
           }
+          this.agentenDa += count;
           global.Sound.play('power');
-          g.floats.add(this.cx(), this.y - 10, 'ICH LASS DAS KURZ MACHEN', '#2fd39e', 60);
+          sagt(this, g, count ? 'ICH LASS DAS KURZ MACHEN' : 'DIE KI ARBEITET SCHON.', '#2fd39e', 60, 10);
         }
         if (this.timer <= 0) this.go('idle', this.rage ? 20 : 40);
         break;
@@ -3333,10 +4225,48 @@
           this.spawnJet(g, fromLeft);
           if (this.phase >= 3) this.spawnJet(g, !fromLeft);
           global.Sound.play('bossRoar');
-          g.floats.add(this.cx(), this.y - 10, 'DECKUNG.', '#e03a30', 60);
+          sagt(this, g, 'DECKUNG.', '#e03a30', 60, 10);
           g.shake(3, 10);
         }
         if (this.timer <= 0) this.go('idle', this.rage ? 18 : 40);
+        break;
+
+      // KONTER: Arme verschraenkt. Wer draufspringt, fliegt.
+      case 'konter':
+        this.vx *= 0.7;
+        this.facing = dx > 0 ? 1 : -1;
+        if (this.timer === 50) sagt(this, g, 'NA? SPRING DOCH.', '#2fd39e', 50);
+        if (this.timer === 54) global.Sound.play('select');
+        if (this.t0 % 5 === 0) {
+          g.particles.spawn({ x: this.cx() + (Math.random() - 0.5) * this.w * 1.4, y: this.y + Math.random() * this.h,
+                              vx: 0, vy: -0.5, life: 16, col: '#ffffff', size: 2, grav: 0 });
+        }
+        if (this.timer <= 0) {
+          // Keiner kam: er gaehnt — und ist offen
+          sagt(this, g, 'LANGWEILIG.', '#c8c0d8', 40);
+          this.go('idle', 34);
+        }
+        break;
+
+      // Kohle aus dem Boden: eine Reihe, von ihm bis hinter Yusuf
+      case 'kohle':
+        this.vx *= 0.8;
+        if (this.timer === 44) {
+          sagt(this, g, 'DIE KOHLE IST HEISS GENUG.', '#ff8a2a', 50);
+          this.kohleX = this.cx();
+          this.kohleDir = dx > 0 ? 1 : -1;
+          global.Sound.play('growl');
+        }
+        if (this.timer < 40 && this.timer > 0 && this.timer % 6 === 0) {
+          this.kohleX += this.kohleDir * 34;
+          var lo = g.arena ? g.arena.x + 10 : -1e9, hi = g.arena ? g.arena.x + g.arena.w - 10 : 1e9;
+          if (this.kohleX > lo && this.kohleX < hi) {
+            var hoch = this.phase >= 3 ? 70 : 54;
+            var k = g.addProjectile('blitz', this.kohleX - 9, this.floorRow * T - hoch, 0, 0);
+            if (k) { k.h = hoch; k.col = '#ff8a2a'; k.life = 46; k.aktiv = 14; }
+          }
+        }
+        if (this.timer <= 0) this.go('idle', this.rage ? 14 : 24);
         break;
 
       case 'dashprep':
@@ -3378,39 +4308,45 @@
     this.animT++;
     if (this.animT > (this.state === 'dash' ? 3 : 7)) { this.animT = 0; this.anim++; }
 
-    this.open = !(this.state === 'dash' || this.state === 'stampf');
+    this.open = !(this.state === 'dash' || this.state === 'stampf' || this.state === 'konter');
     bossContact(this, g);
   };
 
-  BossEsat.prototype.pickAttack = function (g, dx) {
-    var r = Math.random();
-    this.facing = dx > 0 ? 1 : -1;
-    this.landed = true;
-
-    if (!this.rage) {
-      if (r < 0.36) this.go('shisha', 42);
-      else if (r < 0.60) this.go('agents', 48);
-      else if (r < 0.76) this.go('walk', 44);
-      else if (r < 0.90) { this.go('jump', 60); this.vy = -8.8; this.vx = this.facing * 1.9; }
-      else this.go('dashprep', 24);
-    } else if (this.phase === 2) {
-      if (r < 0.20) this.go('shisha', 36);
-      else if (r < 0.38) this.go('agents', 42);
-      else if (r < 0.54) this.go('jets', 58);
-      else if (r < 0.70) this.go('stampf', 50);
-      else if (r < 0.86) this.go('dashprep', 18);
-      else { this.go('jump', 60); this.vy = -10; this.vx = this.facing * 2.4; }
-    } else {
-      if (r < 0.24) this.go('jets', 56);
-      else if (r < 0.42) this.go('stampf', 48);
-      else if (r < 0.58) this.go('agents', 40);
-      else if (r < 0.74) this.go('dashprep', 16);
-      else this.go('shisha', 32);
+  BossEsat.prototype.pickAttack = function (g) {
+    var R = this.rage, P3 = this.phase >= 3;
+    var w = waehle(this, g, [
+      { s: 'shisha', t: R ? 36 : 42, w: function (l) { return l.nah ? 1 : 2.4; } },
+      { s: 'agents', t: R ? 42 : 48, w: function (l, b) { return b.agentenDa >= 2 ? 0.2 : 1.8; } },
+      { s: 'konter', t: 56, w: function (l) { return l.ueber ? 1.8 : (l.nah ? 0.9 : 0.25); } },
+      { s: 'kohle', t: 50, w: function (l) { return l.weit ? 3 : (l.mittel ? 2.4 : 1); } },
+      { s: 'walk', t: 44, w: function (l) { return l.weit && !R ? 1.2 : 0.3; } },
+      { s: 'jump', t: 60, w: function (l) { return l.oben ? 2 : 0.5; },
+        dann: function (b) { b.vy = R ? -10 : -8.8; b.vx = b.facing * (R ? 2.4 : 1.9); } },
+      { s: 'dashprep', t: R ? 18 : 24, w: function (l) { return l.mittel ? 2 : 1; } },
+      R ? { s: 'jets', t: 58, w: 1.2 } : null,
+      R ? { s: 'stampf', t: 50, w: function (l) { return l.nah || l.ueber ? 1.6 : 0.9; } } : null
+    ]);
+    // Im letzten Herz: Kombos
+    if (P3 && w) {
+      if (w.s === 'dashprep' && Math.random() < 0.6) kombo(this, [['stampf', 48]]);
+      else if (w.s === 'kohle' && Math.random() < 0.5) kombo(this, [['jets', 40]]);
     }
   };
 
   BossEsat.prototype.hit = function (g, dmg, p) {
     if (this.invuln > 0 || this.dead || this.state === 'transform') return;
+    // Konter: abgefangen und weggeschleudert
+    if (this.state === 'konter' && p) {
+      this.invuln = 20;
+      p.vy = -9; p.jumpsLeft = 0;
+      p.hurt(g, 1, this.cx());
+      p.vx = (p.cx() > this.cx() ? 1 : -1) * 5;
+      global.Sound.play('bossHit');
+      g.shake(6, 14);
+      sagt(this, g, 'KONTER!', '#ffffff', 50);
+      this.go('dashprep', 16);
+      return;
+    }
     this.hp -= dmg;
     bossBounce(this, g, p, '#2fd39e', dmg);
     if (herzWeg(this, g)) return;
@@ -3425,9 +4361,18 @@
   /* ================= ALEX — Endgegner in der Alkoholabteilung =========
      Yusufs Kollege. Wirft Wodkaflaschen, kotzt Pfuetzen auf den Boden und
      klettert als einziger Boss auf die Regale, um dort in Ruhe ein Bier
-     zu trinken. Ab der Haelfte kippt er Yusuf Alkohol ueber — ab da
-     wackelt das Bild (siehe g.drunk in game.js).
+     zu trinken. Ab der ersten Verwandlung kippt er Yusuf Alkohol ueber —
+     ab da wackelt das Bild und es stehen ZWEI Alex da (g.drunk, game.js).
+     Das bleibt auch nach einem Tod so (Esat, 02.10.).
+     Im letzten Herz (47 PLATIN) ist er schneller und hat mehr: eine
+     Kotz-Fontaene, Bierflaschen-Hagel und den Torkelsturm.
+     Seine Tricks (Mario):
+       - Er rutscht in seiner eigenen Pfuetze aus, wenn er durchrennt.
+         Also: die Pfuetze zwischen sich und ihn bringen.
+       - Wer ihn oben auf dem Regal beim Trinken erwischt, holt ihn runter.
      ================================================================= */
+
+  var ALEX_ZU = { dash: 1, runter: 1, torkelsturm: 1 };
 
   function BossAlex(tx, ty) {
     this.w = 20; this.h = 58;
@@ -3449,6 +4394,8 @@
     this.sip = 0;              // trinkt gerade einen Schluck
     this.stuckT = 0;
     this.ranted = false;
+    this.spottPause = 0;
+    this.rutschPause = 0;
     this.rageName = 'ULTRAPENNER';
     this.rageCol = '#ff8a2a';
     dreiHerzen(this, { name: '47 PLATIN', col: '#c8e8ff', ruf: '47 PLATIN!', vorher: 'NOCH EIN SCHLUCK. FÜR DIE TROPHÄE.' });
@@ -3464,8 +4411,11 @@
     ausweichen(b, g);
     b.vy += GRAV;
     if (b.vy > MAX_FALL) b.vy = MAX_FALL;
-    var hit = moveX(b, g.world, b.vx);
-    b.grounded = (moveY(b, g.world, b.vy) === 1);
+    // Vom Regal gefallen: er faellt durch bis auf den Boden
+    if (b.faellt > 0) b.faellt--;
+    var welt = b.faellt > 0 ? (b.bw || (b.bw = bossWorld(g, b.floorRow))) : g.world;
+    var hit = moveX(b, welt, b.vx);
+    b.grounded = (moveY(b, welt, b.vy) === 1);
     if (b.grounded) {
       if (hit !== 0 && Math.abs(b.vx) > 0.3) {
         b.stuckT++;
@@ -3484,21 +4434,49 @@
     return (b.y + b.h) < (b.floorRow * T - 8);
   }
 
-  BossAlex.prototype.onTransform = function (g) {
+  BossAlex.prototype.onTransform = function (g, still) {
     this.rage = true;
-    // Ultrapenner: groesser und breiter
-    var footY = this.y + this.h, mid = this.cx();
-    this.w = 30; this.h = 80; this.stompY = 40;
-    this.y = footY - this.h;
-    this.x = mid - this.w / 2;
-    // Der Kern der zweiten Haelfte: Yusuf bekommt den Rest der Flasche ab.
-    g.drunk = 1;
+    // Ultrapenner: groesser und breiter (nur einmal)
+    if (this.h < 80) {
+      var footY = this.y + this.h, mid = this.cx();
+      this.w = 30; this.h = 80; this.stompY = 40;
+      this.y = footY - this.h;
+      this.x = mid - this.w / 2;
+    }
+    // Der Kern ab der ersten Verwandlung: Yusuf bekommt den Rest der
+    // Flasche ab — und sieht doppelt. Im letzten Herz noch mehr.
+    g.drunk = this.leben <= 1 ? 2 : 1;
+    if (still) return;
     g.drunkT = 0;
     var p = g.player;
-    g.floats.add(p.cx(), p.y - 30, 'PROST.', '#ff8a2a', 90);
+    g.floats.add(p.cx(), p.y - 30, this.leben <= 1 ? 'NOCH EINE RUNDE. PROST.' : 'PROST.', '#ff8a2a', 90);
     g.particles.burst(p.cx(), p.y + 6, 40,
       { col: '#bfe6ff', spread: 3.4, up: 1.2, life: 50 });
     global.Sound.play('growl');
+  };
+
+  BossAlex.prototype.yusufGetroffen = function (g) {
+    var l = ['PLATIN! DAS WAR EINE TROPHÄE!', 'PROST AUF DICH, YUSUF.', 'HAST DU DAS GESEHEN? ICH NICHT.'];
+    spott(this, g, l[(Math.random() * l.length) | 0], '#ffd257', 56);
+  };
+
+  /** Rennt er gerade durch eine Pfuetze? Dann liegt er. */
+  BossAlex.prototype.rutscht = function (g) {
+    if (this.rutschPause > 0 || !this.grounded || Math.abs(this.vx) < 1.1) return false;
+    var fuss = { x: this.x + 4, y: this.y + this.h - 6, w: this.w - 8, h: 8 };
+    for (var i = 0; i < g.projectiles.length; i++) {
+      var q = g.projectiles[i];
+      if (!q || q.dead || q.t !== 'pfuetze' || (q.alter || 0) < 15) continue;
+      if (!overlap(fuss, q)) continue;
+      q.dead = true;
+      this.rutschPause = 200;
+      this.vx = this.facing * 3; this.vy = -4;
+      global.Sound.play('move');
+      this.aufstehText = 'WER HAT HIER... OH. ICH.';
+      betaeuben(this, g, this.phase >= 3 ? 105 : 125, 'AUSGERUTSCHT! IN DER EIGENEN PFÜTZE!', '#bfe6ff');
+      return true;
+    }
+    return false;
   };
 
   BossAlex.prototype.update = function (g) {
@@ -3506,11 +4484,18 @@
     if (this.flash > 0) this.flash--;
     if (this.invuln > 0) this.invuln--;
     if (this.sip > 0) this.sip--;
+    if (this.spottPause > 0) this.spottPause--;
+    if (this.rutschPause > 0) this.rutschPause--;
     if (this.dead) { bossDeath(this, g, '#ff8a2a'); return; }
+    // Pfuetzen altern (frisch gekotzt rutscht man noch nicht)
+    for (var pi = 0; pi < g.projectiles.length; pi++) {
+      var pq = g.projectiles[pi];
+      if (pq && pq.t === 'pfuetze') pq.alter = (pq.alter || 0) + 1;
+    }
 
     var p = g.player;
     var dx = p.cx() - this.cx();
-    var spd = this.rage ? (this.phase >= 3 ? 1.5 : 1.3) : 1;
+    var spd = this.rage ? (this.phase >= 3 ? 1.6 : 1.3) : 1;
     var i;
     this.timer--;
     rageSparks(this, g);
@@ -3527,13 +4512,25 @@
       case 'idle':
         this.vx *= 0.84;
         this.facing = dx > 0 ? 1 : -1;
+        if (komboWeiter(this, g)) break;
         // Sein Ruhezustand: nochmal kurz ansetzen.
         if (this.timer === 14 && Math.random() < 0.5) { this.sip = 28; global.Sound.play('select'); }
-        if (this.timer <= 0) this.pick(g, dx);
+        if (this.timer <= 0) this.pick(g);
+        break;
+
+      case 'betaeubt':
+        tickBetaeubt(this, g);
+        break;
+
+      case 'spott':
+        this.vx *= 0.8;
+        this.sip = 10;
+        if (this.timer <= 0) this.go('idle', 10);
         break;
 
       case 'walk':
         klugLaufen(this, g, 1.5 * spd);
+        if (this.rutscht(g)) break;
         if (this.timer <= 0) this.go('idle', this.rage ? 12 : 22);
         break;
 
@@ -3547,7 +4544,7 @@
                             this.facing * (2.0 + i * 0.7) * spd, -4.2 - i * 0.4);
           }
           global.Sound.play('shoot');
-          g.floats.add(this.cx(), this.y - 14, 'DIE WAR NOCH HALB VOLL!', '#bfe6ff', 60);
+          if (this.timer === 18) sagt(this, g, 'DIE WAR NOCH HALB VOLL!', '#bfe6ff', 60, 14);
         }
         if (this.timer <= 0) this.go('idle', this.rage ? 18 : 30);
         break;
@@ -3560,10 +4557,55 @@
                           this.facing * 2.4, -2.6);
           global.Sound.play('hurt');
         }
-        if (this.timer === 20) {
-          g.floats.add(this.cx(), this.y - 14, 'MIR IST SCHLECHT.', '#8fd85a', 60);
-        }
+        if (this.timer === 20) sagt(this, g, 'MIR IST SCHLECHT.', '#8fd85a', 60, 14);
         if (this.timer <= 0) this.go('idle', this.rage ? 18 : 32);
+        break;
+
+      // 47 PLATIN: die Fontaene. Kotze im hohen Bogen, nach beiden Seiten.
+      case 'kotzfontaene':
+        this.vx *= 0.8;
+        if (this.timer === 56) sagt(this, g, 'OH NEIN. OH NEIN NEIN NEIN.', '#8fd85a', 50);
+        if (this.timer < 46 && this.timer > 20 && this.timer % 6 === 0) {
+          var k = (46 - this.timer) / 6, seite = k % 2 ? -1 : 1;
+          g.addProjectile('kotze', this.cx() - 5, this.y + 18,
+                          seite * (1.2 + (k >> 1) * 0.9) * spd, -6.4 + (k >> 1) * 0.3);
+          global.Sound.play('hurt');
+          g.particles.burst(this.cx(), this.y + 20, 4, { col: '#8fd85a', spread: 1.6, up: 1.2, life: 18 });
+        }
+        if (this.timer <= 0) this.go('idle', 14);
+        break;
+
+      // 47 PLATIN: Bierflaschen, gezielt auf Yusuf. Drei hintereinander.
+      case 'flaschenhagel':
+        this.vx *= 0.8;
+        if (this.timer === 40) sagt(this, g, 'FANG! DIE IST FÜR DICH!', '#e8b830', 50);
+        if (this.timer === 34 || this.timer === 24 || this.timer === 14) {
+          var ziel = p.cx() + p.vx * 22 - this.cx();
+          var flug = Math.max(24, Math.min(60, Math.abs(ziel) / 3.6));
+          g.addProjectile('bierflasche', this.cx() - 3, this.y + 12,
+                          ziel / flug, -0.5 * 0.24 * flug - (this.y + 12 - (p.y + p.h / 2)) / flug);
+          global.Sound.play('shoot');
+        }
+        if (this.timer <= 0) this.go('idle', 14);
+        break;
+
+      // 47 PLATIN: der Torkelsturm. Zickzack durch den Laden, zweimal hin
+      // und her. Pfuetzen auf dem Weg sind sein Ende.
+      case 'torkelsturm':
+        this.vx = this.facing * 4.6 * spd + Math.sin(this.t0 * 0.35) * 1.2;
+        if (this.t0 % 3 === 0) {
+          g.particles.spawn({ x: this.cx() - this.facing * 10, y: this.y + this.h - 2, vx: -this.facing, vy: -0.3,
+                              life: 14, col: '#c8a878', size: 2, grav: 0 });
+        }
+        if (anWand(this, g, this.vx)) {
+          this.facing = -this.facing;
+          this.wendungen = (this.wendungen || 0) + 1;
+          g.shake(4, 8);
+          global.Sound.play('stomp');
+          if (this.wendungen >= 2) { this.wendungen = 0; this.go('idle', 26); break; }
+        }
+        if (this.rutscht(g)) break;
+        if (this.timer <= 0) { this.wendungen = 0; this.go('idle', 20); }
         break;
 
       // Er klettert aufs Regal und trinkt dort in Ruhe weiter.
@@ -3583,11 +4625,9 @@
       case 'trinken':
         this.vx *= 0.7;
         this.sip = 30;
-        if (this.timer === 60) {
-          g.floats.add(this.cx(), this.y - 16, 'EINS GEHT NOCH.', '#ffd257', 70);
-        }
-        if (this.timer === 44 || this.timer === 24) {
-          g.addProjectile('bier', this.cx() - 3, this.y + 18,
+        if (this.timer === 60) sagt(this, g, 'EINS GEHT NOCH.', '#ffd257', 70, 16);
+        if (this.timer === 44 || this.timer === 24 || (this.phase >= 3 && this.timer === 34)) {
+          g.addProjectile(this.phase >= 3 ? 'bierflasche' : 'bier', this.cx() - 3, this.y + 18,
                           (dx > 0 ? 1 : -1) * 2.6, -1.2);
           global.Sound.play('shoot');
         }
@@ -3620,8 +4660,10 @@
         break;
 
       case 'dash':
-        // Torkeln: er laeuft nicht gerade.
-        this.vx = this.facing * 3.8 * spd + Math.sin(this.t0 * 0.3) * 0.8;
+        // Torkeln: er laeuft nicht gerade. (Der Sprint bleibt so schnell wie
+        // frueher — schneller ist er im letzten Herz bei allem anderen.)
+        this.vx = this.facing * 3.8 * Math.min(spd, 1.4) + Math.sin(this.t0 * 0.3) * 0.8;
+        if (this.rutscht(g)) break;
         if (this.timer <= 0) this.go('idle', this.rage ? 18 : 34);
         break;
 
@@ -3644,10 +4686,8 @@
       // ULTRAPENNER: Dosen vom Himmel.
       case 'bierregen':
         this.vx *= 0.8;
-        if (this.timer === 70) {
-          g.floats.add(this.cx(), this.y - 16, 'RUNDE FÜR ALLE!', '#ff8a2a', 70);
-        }
-        if (this.timer % 11 === 0) rainFromSky(g, 'bier', 1.4);
+        if (this.timer === 70) sagt(this, g, 'RUNDE FÜR ALLE!', '#ff8a2a', 70, 16);
+        if (this.timer % (this.phase >= 3 ? 10 : 12) === 0) rainFromSky(g, 'bier', 1.4);
         if (this.timer <= 0) this.go('idle', 18);
         break;
     }
@@ -3655,11 +4695,11 @@
     alexMove(this, g);
 
     this.animT++;
-    if (this.animT > (this.state === 'dash' ? 3 : 7)) { this.animT = 0; this.anim++; }
+    if (this.animT > (this.state === 'dash' || this.state === 'torkelsturm' ? 3 : 7)) { this.animT = 0; this.anim++; }
 
     this.updateSchatten(g);
 
-    this.open = !(this.state === 'dash' || this.state === 'runter');
+    this.open = !ALEX_ZU[this.state];
     bossContact(this, g);
   };
 
@@ -3689,41 +4729,37 @@
     }
   };
 
-  BossAlex.prototype.pick = function (g, dx) {
-    var r = Math.random();
-    this.facing = dx > 0 ? 1 : -1;
-    this.landed = true;
-
+  BossAlex.prototype.pick = function (g) {
     // Einmal pro Kampf haelt er seinen Vortrag.
     if (!this.ranted && this.hp <= this.maxHp - 3) {
       this.ranted = true;
       this.go('stotter', 84);
       return;
     }
-    if (!this.rage) {
-      if (r < 0.26) this.go('wodka', 38);
-      else if (r < 0.46) this.go('kotze', 40);
-      else if (r < 0.64) this.go('bierjump', 44);
-      else if (r < 0.80) this.go('dashprep', 24);
-      else this.go('walk', 42);
-    } else if (this.phase === 2) {
-      if (r < 0.22) this.go('wodka', 32);
-      else if (r < 0.40) this.go('bierregen', 76);
-      else if (r < 0.58) this.go('bierjump', 44);
-      else if (r < 0.74) this.go('kotze', 34);
-      else if (r < 0.90) this.go('dashprep', 18);
-      else this.go('walk', 36);
-    } else {
-      if (r < 0.24) this.go('bierregen', 80);
-      else if (r < 0.44) this.go('wodka', 28);
-      else if (r < 0.62) this.go('dashprep', 15);
-      else if (r < 0.80) this.go('kotze', 30);
-      else this.go('bierjump', 44);
+    var R = this.rage, P3 = this.phase >= 3;
+    var pfuetzen = 0;
+    for (var i = 0; i < g.projectiles.length; i++) {
+      var q = g.projectiles[i];
+      if (q && !q.dead && q.t === 'pfuetze') pfuetzen++;
     }
+    var w = waehle(this, g, [
+      { s: 'wodka', t: R ? 32 : 38, w: function (l) { return l.nah ? 1 : 1.9; } },
+      { s: 'kotze', t: R ? 34 : 40, w: function (l) { return l.nah ? 1.8 : 1; } },
+      { s: 'bierjump', t: 44, w: function (l) { return l.weit ? 2 : 1.2; } },
+      { s: 'dashprep', t: P3 ? 22 : (R ? 24 : 26), w: function (l) { return (l.mittel || l.weit ? 1.6 : 0.7) + pfuetzen * 0.5; } },
+      { s: 'walk', t: 40, w: function (l) { return (l.weit ? 1 : 0.3) + pfuetzen * 0.4; } },
+      R ? { s: 'bierregen', t: 70, w: function (l) { return l.oben ? 1.8 : 0.8; } } : null,
+      P3 ? { s: 'kotzfontaene', t: 60, w: function (l) { return l.nah || l.mittel ? 2.6 : 1.4; } } : null,
+      P3 ? { s: 'flaschenhagel', t: 44, w: function (l) { return l.weit ? 3 : 2; } } : null,
+      P3 ? { s: 'torkelsturm', t: 150, w: function () { return 1 + pfuetzen * 0.5; } } : null
+    ]);
+    // 47 PLATIN: erst kotzen, dann losrennen — durch die eigene Pfuetze?
+    if (P3 && w && w.s === 'kotze' && Math.random() < 0.35) kombo(this, [['dashprep', 18]]);
   };
 
   BossAlex.prototype.hit = function (g, dmg, p) {
     if (this.invuln > 0 || this.dead || this.state === 'transform') return;
+    var warOben = this.state === 'trinken';
     this.hp -= dmg;
     bossBounce(this, g, p, '#ff8a2a', dmg);
     if (herzWeg(this, g)) return;
@@ -3732,6 +4768,13 @@
       g.shake(10, 42);
       global.Sound.play('bossRoar');
       g.onAlexDead();
+      return;
+    }
+    // Beim Trinken auf dem Regal erwischt: er faellt runter
+    if (warOben) {
+      this.faellt = 50;
+      this.aufstehText = 'ICH BIN NICHT GEFALLEN. ICH BIN GESPRUNGEN.';
+      betaeuben(this, g, 100, 'VOM REGAL GEFALLEN! DAS BIER AUCH!', '#ffd257');
     }
   };
 
@@ -3741,7 +4784,13 @@
      die ganze Zeit Mikas nachruecken — seine kleinen Kollegen, die alle
      gleich aussehen. Ab der Haelfte kommt die ganze Mika-Armee: ganze
      Reihen von Mikas rennen quer ueber den Gehweg.
+     Seit 02.10. sein Trick (Mario): der MIKA-TURM. Drei Mikas stellen sich
+     aufeinander, Broke steht oben und wirft Mahnungen (er ist pleite).
+     Wer den Turm unten anrempelt, bringt ihn zum Einsturz — Broke faellt
+     und bleibt benommen liegen.
      ================================================================= */
+
+  var TURM_H = 48;            // drei Mikas uebereinander
 
   function liveMikas(g) {
     var n = 0;
@@ -3772,6 +4821,8 @@
     this.trail = [];            // Nachbilder, wenn er rennt
     this.mikaT = 150;           // bis der naechste Mika von allein nachrueckt
     this.target = 0;
+    this.turmH = 0;             // wie hoch der Mika-Turm gerade ist
+    this.spottPause = 0;
     this.rageName = 'MIKA-ARMEE';
     this.rageCol = '#ffb43c';
     dreiHerzen(this, { name: 'MIKAS, VOLLGAS', col: '#ff6a3c', ruf: 'VOLLGAS!' });
@@ -3785,6 +4836,12 @@
   BossBroke.prototype.onTransform = function () {
     this.rage = true;
     this.mikaT = 40;
+    this.turmH = 0;
+  };
+
+  BossBroke.prototype.yusufGetroffen = function (g) {
+    if (this.state === 'turm' || this.state === 'turmbau') return;
+    spott(this, g, 'ZU LANGSAM, YUSUF. ICH WARTE SEIT ZWEI STUNDEN.', '#c8c0d8', 52);
   };
 
   /** Ein Mika erscheint. Beim Ansturm rennt er stur geradeaus. */
@@ -3817,11 +4874,31 @@
     return n;
   };
 
+  /** Der Turm: wo stehen die Mikas gerade? */
+  BossBroke.prototype.turm = function () {
+    return { x: this.cx() - 8, y: this.floorRow * T - this.turmH, w: 16, h: this.turmH };
+  };
+
+  /** Yusuf hat den Turm angerempelt: alles faellt. */
+  BossBroke.prototype.einsturz = function (g) {
+    var t = this.turm();
+    for (var k = 0; k < 3; k++) {
+      g.particles.burst(t.x + 8, t.y + t.h - 8 - k * 16, 8, { col: '#9ad0ff', spread: 3, up: 1.6, life: 30 });
+    }
+    g.floats.add(t.x + 8, t.y + t.h - 30, 'MIKAS! ALLE WEG!', '#9ad0ff', 60);
+    global.Sound.play('brk');
+    this.turmH = 0;
+    this.vy = -2; this.vx = 0;
+    this.aufstehText = 'DAS WAR EIN TEST. FÜR DIE MIKAS.';
+    betaeuben(this, g, this.phase >= 3 ? 110 : 130, 'DER MIKA-TURM FÄLLT!', '#ffb43c');
+  };
+
   BossBroke.prototype.update = function (g) {
     this.t0++;
     if (this.flash > 0) this.flash--;
     if (this.invuln > 0) this.invuln--;
-    if (this.dead) { this.trail.length = 0; bossDeath(this, g, '#c49a64'); return; }
+    if (this.spottPause > 0) this.spottPause--;
+    if (this.dead) { this.trail.length = 0; this.turmH = 0; bossDeath(this, g, '#c49a64'); return; }
 
     var p = g.player;
     var dx = p.cx() - this.cx();
@@ -3848,7 +4925,7 @@
     switch (this.state) {
       case 'transform':
         if (this.timer === 88) {
-          g.floats.add(this.cx(), this.y - 14, this.leben > 1 ? 'OKAY. JETZT ALLE.' : 'NOCH SCHNELLER. ALLE.', '#ffd257', 80);
+          sagt(this, g, this.leben > 1 ? 'OKAY. JETZT ALLE.' : 'NOCH SCHNELLER. ALLE.', '#ffd257', 80, 14);
         }
         if (tickTransform(this, g, 'MIKA-ARMEE!', this.rageCol)) {
           this.go('idle', 12);
@@ -3860,7 +4937,17 @@
       case 'idle':
         this.vx *= 0.8;
         this.facing = dx > 0 ? 1 : -1;
-        if (this.timer <= 0) this.pick(g, dx);
+        if (komboWeiter(this, g)) break;
+        if (this.timer <= 0) this.pick(g);
+        break;
+
+      case 'betaeubt':
+        tickBetaeubt(this, g);
+        break;
+
+      case 'spott':
+        this.vx *= 0.8;
+        if (this.timer <= 0) this.go('idle', 10);
         break;
 
       // Er geht nicht. Er joggt. Schnell.
@@ -3872,13 +4959,45 @@
       case 'mikas':
         this.vx *= 0.8;
         if (this.timer === 22) {
-          if (!this.callMikas(g, this.rage ? 3 : 2)) {
-            g.floats.add(this.cx(), this.y - 14, 'ALLE MIKAS SIND SCHON DA.', '#c8c0d8', 50);
-          } else {
-            g.floats.add(this.cx(), this.y - 14, 'MIKAS!', '#ffd257', 45);
-          }
+          if (!this.callMikas(g, this.rage ? 3 : 2)) sagt(this, g, 'ALLE MIKAS SIND SCHON DA.', '#c8c0d8', 50, 14);
+          else sagt(this, g, 'MIKAS!', '#ffd257', 45, 14);
         }
         if (this.timer <= 0) this.go('idle', this.rage ? 16 : 28);
+        break;
+
+      // Der Mika-Turm: drei Mikas stellen sich unter ihn ...
+      case 'turmbau':
+        this.vx = 0;
+        if (this.timer === 34) sagt(this, g, 'MIKAS! TURM!', '#9ad0ff', 50);
+        if (this.timer % 11 === 0 && this.turmH < TURM_H) {
+          this.turmH = Math.min(TURM_H, this.turmH + 16);
+          global.Sound.play('jump');
+          g.particles.burst(this.cx(), this.floorRow * T - this.turmH + 8, 6, { col: '#9ad0ff', spread: 1.6, up: 0.8, life: 18 });
+        }
+        if (this.timer <= 0) {
+          this.turmH = TURM_H;
+          this.go('turm', this.phase >= 3 ? 200 : 240);
+          sagt(this, g, 'VON HIER OBEN SIEHT MAN DIE MAHNUNGEN BESSER.', '#c49a64', 80);
+        }
+        break;
+
+      // ... und von oben wirft er Mahnungen. Er ist pleite.
+      case 'turm':
+        this.vx = 0;
+        this.facing = dx > 0 ? 1 : -1;
+        if (this.timer % (this.phase >= 3 ? 24 : 32) === 0 && this.timer > 10) {
+          var ziel = p.cx() + p.vx * 18 - this.cx(), flug = 38;
+          g.addProjectile('mahnung', this.cx() - 5, this.y + 14,
+                          ziel / flug, -0.5 * 0.2 * flug + ((p.y + p.h / 2) - (this.y + 14)) / flug);
+          global.Sound.play('shoot');
+          if (Math.random() < 0.3) sagt(this, g, ['MAHNUNG!', 'LETZTE MAHNUNG!', 'INKASSO!'][(Math.random() * 3) | 0], '#f4f4ee', 36);
+        }
+        if (this.timer <= 0) {
+          // Keiner hat ihn runtergeholt: er springt selbst
+          this.turmH = 0;
+          g.floats.add(this.cx(), this.floorRow * T - 30, 'MIKAS, PAUSE!', '#9ad0ff', 40);
+          this.go('sprung', 46);
+        }
         break;
 
       case 'dashprep':
@@ -3922,7 +5041,7 @@
           this.vx = 0;
           this.facing = dx > 0 ? 1 : -1;
           this.go('idle', this.rage ? 24 : 36);
-          g.floats.add(this.cx(), this.y - 14, 'ZU LANGSAM, YUSUF.', '#c8c0d8', 50);
+          if (!this.kombo || !this.kombo.length) sagt(this, g, 'ZU LANGSAM, YUSUF.', '#c8c0d8', 50, 14);
         }
         break;
 
@@ -3946,7 +5065,7 @@
       case 'ansturm':
         this.vx *= 0.8;
         if (this.timer === 62) {
-          g.floats.add(this.cx(), this.y - 16, 'MIKAS! ANSTURM!', '#ffb43c', 70);
+          sagt(this, g, 'MIKAS! ANSTURM!', '#ffb43c', 70, 16);
           global.Sound.play('bossRoar');
           // Sie kommen von der Seite, auf der Yusuf gerade NICHT steht
           var mid = g.arena ? g.arena.x + g.arena.w / 2 : this.cx();
@@ -3963,7 +5082,16 @@
         break;
     }
 
-    bossMove(this, g);
+    if (this.state === 'turm' || this.state === 'turmbau') {
+      // Oben auf dem Turm: er steht auf den Mikas, nicht auf dem Boden
+      this.y = this.floorRow * T - this.turmH - this.h;
+      this.vy = 0; this.vx = 0; this.grounded = true;
+      // Wer den Turm anrempelt oder draufspringt, bringt ihn zum Einsturz
+      if (this.turmH >= 16 && !p.dead && overlap(p, this.turm())) this.einsturz(g);
+    } else {
+      if (this.turmH > 0 && this.state !== 'betaeubt') this.turmH = 0;
+      bossMove(this, g);
+    }
 
     this.animT++;
     if (this.animT > (fast ? 2 : 6)) { this.animT = 0; this.anim++; }
@@ -3972,44 +5100,39 @@
     bossContact(this, g);
   };
 
-  BossBroke.prototype.pick = function (g, dx) {
-    var r = Math.random();
-    this.facing = dx > 0 ? 1 : -1;
-    this.landed = true;
-
-    if (!this.rage) {
-      if (r < 0.26) this.go('mikas', 40);
-      else if (r < 0.46) this.go('dashprep', 22);
-      else if (r < 0.62) this.go('blitzprep', 20);
-      else if (r < 0.78) this.go('sprung', 50);
-      else this.go('walk', 40);
-    } else if (this.phase === 2) {
-      if (r < 0.22) this.go('ansturm', 70);
-      else if (r < 0.38) this.go('mikas', 34);
-      else if (r < 0.56) this.go('dashprep', 16);
-      else if (r < 0.72) this.go('blitzprep', 16);
-      else if (r < 0.88) this.go('sprung', 50);
-      else this.go('walk', 30);
-    } else {
-      if (r < 0.24) this.go('ansturm', 70);
-      else if (r < 0.42) this.go('blitzprep', 14);
-      else if (r < 0.60) this.go('dashprep', 14);
-      else if (r < 0.78) this.go('sprung', 48);
-      else this.go('mikas', 30);
-    }
+  BossBroke.prototype.pick = function (g) {
+    var R = this.rage, P3 = this.phase >= 3, self = this;
+    var w = waehle(this, g, [
+      { s: 'mikas', t: R ? 34 : 40, w: function () { return liveMikas(g) >= (R ? 4 : 3) ? 0.2 : 2; } },
+      { s: 'dashprep', t: P3 ? 14 : (R ? 16 : 22), w: function (l) { return l.mittel || l.weit ? 3 : 1; } },
+      { s: 'blitzprep', t: P3 ? 14 : (R ? 16 : 20), w: function (l) { return l.nah ? 2.6 : 1.6; } },
+      { s: 'sprung', t: 50, w: function (l) { return l.oben || l.ueber ? 4 : 1.4; } },
+      { s: 'walk', t: 36, w: function (l) { return l.weit && !R ? 1 : 0.2; } },
+      { s: 'turmbau', t: 36, w: function (l) { return self.letzterTurm > 0 ? 0 : (l.weit || l.mittel ? 2.2 : 1.2); },
+        dann: function (b) { b.letzterTurm = 3; } },
+      R ? { s: 'ansturm', t: 70, w: 2 } : null
+    ]);
+    if (this.letzterTurm > 0 && w && w.s !== 'turmbau') this.letzterTurm--;
+    // Im letzten Herz: Blitzwechsel und sofort zurueck gesprintet
+    if (P3 && w && w.s === 'blitzprep' && Math.random() < 0.6) kombo(this, [['dashprep', 10]]);
   };
 
   BossBroke.prototype.hit = function (g, dmg, p) {
     if (this.invuln > 0 || this.dead || this.state === 'transform') return;
+    var warOben = this.state === 'turm' || this.state === 'turmbau';
     this.hp -= dmg;
     bossBounce(this, g, p, '#c49a64', dmg);
-    if (herzWeg(this, g)) return;
+    if (herzWeg(this, g)) { this.turmH = 0; return; }
     if (this.hp <= 0) {
+      this.turmH = 0;
       this.dead = true; this.deadTimer = 0; this.vy = -7;
       g.shake(10, 42);
       global.Sound.play('bossRoar');
       g.onBrokeDead();
+      return;
     }
+    // Oben auf dem Turm getroffen: der Turm wackelt — und faellt
+    if (warOben) this.einsturz(g);
   };
 
   /* ================= HAMZA — Level 13, im Shawarma-Laden =================
@@ -4049,11 +5172,32 @@
     this.shotFloor = ty;           // seine Wuerfe fliegen durch die Empore
     this.oben = false;             // steht er gerade auf der Empore?
     this.sprungT = 0;
+    this.spottPause = 0;
   }
 
   BossHamza.prototype.cx = function () { return this.x + this.w / 2; };
   BossHamza.prototype.go = function (s, t) { this.state = s; this.timer = t; };
   BossHamza.prototype.onTransform = function () { this.rage = true; };
+
+  /** Sein Ball kam zurueck und hat ihn getroffen (Mario-Trick). */
+  BossHamza.prototype.eigentor = function (g) {
+    if (this.dead || this.state === 'transform' || this.state === 'hoch' || this.state === 'betaeubt') return;
+    if (this.oben) {
+      // Von der Empore gefallen
+      this.oben = false;
+      this.floorRow = this.bodenRow; this.bw = null;
+      this.bodenT = 360;
+    }
+    this.ballAtFeet = false;
+    this.nach = 'idle';
+    this.aufstehText = 'DAS WAR ABSEITS. GANZ KLAR ABSEITS.';
+    betaeuben(this, g, this.phase >= 3 ? 110 : 130, 'EIGENTOR!!!', '#ffffff');
+  };
+
+  BossHamza.prototype.yusufGetroffen = function (g) {
+    if (this.oben) return;
+    spott(this, g, 'TOOOR! WIE IN BEIRUT!', '#4ad86a', 56);
+  };
   BossHamza.prototype.naechstesLeben = function (g, still) {
     naechstesLeben(this, g, still);
     if (still && g.lvl.empore) this.aufEmpore(g, true);
@@ -4099,7 +5243,17 @@
     this.timer--;
     rageSparks(this, g);
 
+    if (this.spottPause > 0) this.spottPause--;
     switch (this.state) {
+      case 'betaeubt':
+        tickBetaeubt(this, g);
+        break;
+
+      case 'spott':
+        this.vx *= 0.8;
+        if (this.timer <= 0) this.go('idle', 10);
+        break;
+
       case 'transform':
         if (this.timer === 88) g.floats.add(this.cx(), this.y - 14, this.leben > 1 ? 'HALBZEIT! YALLA!' : 'ABPFIFF? NEIN. YALLA!', '#ffd257', 80);
         if (tickTransform(this, g, '2. HALBZEIT!', this.rageCol)) {
@@ -4141,6 +5295,7 @@
         this.vx *= 0.8;
         this.facing = dx > 0 ? 1 : -1;
         this.ballAtFeet = true;
+        if (komboWeiter(this, g)) break;
         if (this.timer <= 0) this.pick(g, dx);
         break;
 
@@ -4278,34 +5433,42 @@
   };
 
   BossHamza.prototype.pick = function (g, dx, unten) {
-    var r = Math.random();
-    this.facing = dx > 0 ? 1 : -1;
-    this.landed = true;
+    var R = this.rage, P3 = this.phase >= 3, w;
     var zurueck = unten ? 'boden' : 'idle';
-    if (!this.rage) {
-      if (r < 0.26) this.go('humus', 38);
-      else if (r < 0.48) this.go('hhc', 40);
-      else if (r < 0.72) this.go('kick', 30);
-      else if (r < 0.86) this.go('dribbelprep', 22);
-      else this.go('walk', 40);
+    if (!R) {
+      w = waehle(this, g, [
+        { s: 'humus', t: 38, w: function (l) { return l.nah ? 1 : 2.4; } },
+        { s: 'hhc', t: 40, w: function (l) { return l.mittel || l.weit ? 2.4 : 1.2; } },
+        { s: 'kick', t: 30, w: function (l) { return l.mittel || l.weit ? 3 : 1.4; } },
+        { s: 'dribbelprep', t: 22, w: function (l) { return l.nah ? 0.8 : 2; } },
+        { s: 'walk', t: 40, w: function (l) { return l.weit ? 1.2 : 0.3; } }
+      ]);
     } else if (this.oben) {
       // Zweite Halbzeit, oben: werfen, schiessen, regnen lassen — und
       // ab und zu runterspringen, damit man ihn auch unten erwischt.
       // Spaetestens nach 7 Sekunden oben kommt er runter (vorher blieb er
       // manchmal eine Minute unerreichbar).
-      if ((this.obenT || 0) > 420) { this.runter(g); return; }
-      if (r < 0.22) this.go('humus', 32);
-      else if (r < 0.42) this.go('kick', 28);
-      else if (r < 0.58) this.go('hhc', 36);
-      else if (r < 0.70) this.go('humusregen', 74);
-      else if (r < 0.82) this.go('walk', 50);
-      else { this.runter(g); return; }
+      if ((this.obenT || 0) > 420 || Math.random() < 0.18) { this.runter(g); return; }
+      w = waehle(this, g, [
+        { s: 'humus', t: 32, w: 2.2 },
+        { s: 'kick', t: 28, w: 2.6 },
+        { s: 'hhc', t: 36, w: 1.6 },
+        { s: 'humusregen', t: 74, w: function (l) { return l.oben ? 0.4 : 1.2; } },
+        { s: 'walk', t: 50, w: 1 }
+      ]);
     } else {
-      if (r < 0.24) this.go('kick', 26);
-      else if (r < 0.46) this.go('fallrueck', 50);
-      else if (r < 0.64) this.go('dribbelprep', 14);
-      else if (r < 0.82) this.go('hhc', 32);
-      else this.go('humus', 28);
+      w = waehle(this, g, [
+        { s: 'kick', t: 26, w: function (l) { return l.mittel || l.weit ? 3 : 1.4; } },
+        { s: 'fallrueck', t: 50, w: function (l) { return l.oben || l.ueber ? 4 : 2; } },
+        { s: 'dribbelprep', t: 14, w: function (l) { return l.nah ? 1 : 2.2; } },
+        { s: 'hhc', t: 32, w: 1.6 },
+        { s: 'humus', t: 28, w: function (l) { return l.nah ? 0.6 : 1.6; } }
+      ]);
+    }
+    // Verlaengerung: Doppelpass mit sich selbst, Dribbling in den Fallrueckzieher
+    if (P3 && w) {
+      if (w.s === 'kick' && Math.random() < 0.6) kombo(this, [['kick', 22]]);
+      else if (w.s === 'dribbelprep' && !this.oben && Math.random() < 0.6) kombo(this, [['fallrueck', 48]]);
     }
     this.nach = zurueck;
   };
@@ -4315,7 +5478,7 @@
     var warUnten = this.state === 'boden' || (this.rage && !this.oben);
     this.hp -= dmg;
     bossBounce(this, g, p, '#d8282e', dmg);
-    if (warUnten && this.rage) this.state = 'boden';
+    if (warUnten && this.rage && this.state !== 'betaeubt') this.state = 'boden';
     if (this.hp > 0) return;
     if (this.leben > 1) { this.naechstesLeben(g, false); return; }
     this.dead = true; this.deadTimer = 0; this.vy = -7;
@@ -4355,6 +5518,7 @@
     this.rageName = 'SPARTANER';
     this.rageCol = '#e8b030';
     this.spartaSaid = false;      // "DAS IST SPARTA!" kommt nur einmal mit Antwort
+    this.spottPause = 0;
     this.barName = 'GEORGIOS';
     this.barCol = '#2a5ab8';
   }
@@ -4371,6 +5535,18 @@
   };
   BossGeorgios.prototype.naechstesLeben = function (g, still) { naechstesLeben(this, g, still); };
 
+  /* Seine Tricks (Esat, 02.10.: "jeder Boss individuell"):
+       SIRTAKI   wer ihm beim Tanzen ausweicht, sieht ihn danach taumeln:
+                 zu viel gedreht, ihm ist schwindelig (betaeubt).
+       SCHILD    als Spartaner haelt er manchmal den Schild hoch. Drauf-
+                 springen gibt nur KLONG — und er stoesst sofort zu.
+       OMA       im letzten Herz wirft Oma Tzatziki — gezielt auf Yusuf.
+                 Wer neben Georgios steht, laesst sie ihren Enkel treffen. */
+  BossGeorgios.prototype.yusufGetroffen = function (g) {
+    if (this.state === 'sirtaki') { this.sirtakiTraf = true; return; }
+    spott(this, g, this.sparta ? 'SO KÄMPFT MAN IN SPARTA!' : 'OPA! SO MACHT MAN DAS IN THESSALONIKI!', '#6a9ae8', 52);
+  };
+
   /** Ein Tritt oder Schildstoss: kurze Trefferflaeche direkt vor ihm. */
   BossGeorgios.prototype.punch = function (g, w, h, yOff, life) {
     var fx = this.facing > 0 ? this.x + this.w - 4 : this.x - w + 4;
@@ -4385,6 +5561,7 @@
     if (this.flash > 0) this.flash--;
     if (this.invuln > 0) this.invuln--;
     if (this.punchT > 0) this.punchT--;
+    if (this.spottPause > 0) this.spottPause--;
     if (this.dead) { bossDeath(this, g, '#2a5ab8'); return; }
 
     var p = g.player;
@@ -4404,17 +5581,49 @@
         }
         break;
 
-      // Drittes Leben: Oma wirft Tzatziki aus der Kueche
+      // Drittes Leben: Oma wirft Tzatziki aus der Kueche — auf Yusuf
       case 'tzatziki':
         this.vx *= 0.7;
-        if (this.timer === 70) g.floats.add(this.cx(), this.y - 16, 'OMA! TZATZIKI!', '#f4f4ee', 70);
-        if (this.timer < 64 && this.timer % 9 === 0) rainFromSky(g, 'humus', 1.6);
-        if (this.timer <= 0) this.go('idle', 18);
+        if (this.timer === 70) sagt(this, g, 'OMA! TZATZIKI!', '#f4f4ee', 70, 16);
+        if (this.timer < 64 && this.timer % 9 === 0) {
+          var tz = g.addProjectile('humus', p.cx() - 4 + (Math.random() - 0.5) * 36, g.cameraTopY(), 0, 1.6);
+          if (tz) tz.oma = true;
+        }
+        // Oma trifft den Falschen
+        for (i = 0; i < g.projectiles.length; i++) {
+          var oq = g.projectiles[i];
+          if (oq && oq.oma && !oq.dead && overlap(this, oq)) {
+            oq.dead = true;
+            g.particles.burst(this.cx(), this.y + 6, 12, { col: '#f4f4ee', spread: 2.4, up: 1, life: 26 });
+            this.aufstehText = 'OMA... ICH BIN ES. DEIN LIEBLING.';
+            betaeuben(this, g, 120, 'OMA! DAS WAR ICH!', '#f4f4ee');
+            break;
+          }
+        }
+        if (this.state === 'tzatziki' && this.timer <= 0) this.go('idle', 18);
+        break;
+
+      case 'betaeubt':
+        tickBetaeubt(this, g);
+        break;
+
+      case 'spott':
+        this.vx *= 0.8;
+        if (this.timer <= 0) this.go('idle', 10);
+        break;
+
+      // Schild hoch. Draufspringen: KLONG.
+      case 'schild':
+        this.vx *= 0.7;
+        this.facing = dx > 0 ? 1 : -1;
+        if (this.timer === 56) sagt(this, g, 'MOLON LABE! KOMM UND HOL ES DIR!', '#e8b030', 60);
+        if (this.timer <= 0) this.go('idle', 26);
         break;
 
       case 'idle':
         this.vx *= 0.78;
         this.facing = dx > 0 ? 1 : -1;
+        if (komboWeiter(this, g)) break;
         if (this.timer <= 0) this.pick(g, dx);
         break;
 
@@ -4442,9 +5651,15 @@
       // Sirtaki: er dreht sich und tanzt quer durch den Raum
       case 'sirtaki':
         this.vx = this.facing * 3.4 * spd;
-        if (this.timer === 58) g.floats.add(this.cx(), this.y - 14, 'SIRTAKI!', '#ffffff', 60);
+        if (anWand(this, g, this.vx)) this.facing = -this.facing;
+        if (this.timer === 58) sagt(this, g, 'SIRTAKI!', '#ffffff', 60, 14);
         if (this.timer % 12 === 0) global.Sound.play('move');
-        if (this.timer <= 0) this.go('idle', this.rage ? 14 : 26);
+        if (this.timer <= 0) {
+          if (!this.sirtakiTraf) {
+            this.aufstehText = 'ALLES DREHT SICH. AUCH DIE TAVERNE.';
+            betaeuben(this, g, this.phase >= 3 ? 90 : 110, 'SCHWINDELIG! ZU VIEL GEDREHT!', '#ffffff');
+          } else this.go('idle', this.rage ? 14 : 26);
+        }
         break;
 
       // Oliven im Faecher
@@ -4583,17 +5798,19 @@
     bossContact(this, g);
   };
 
-  BossGeorgios.prototype.pick = function (g, dx) {
-    var r = Math.random();
-    this.facing = dx > 0 ? 1 : -1;
-    this.landed = true;
+  BossGeorgios.prototype.pick = function (g) {
+    var P3 = this.phase >= 3, w;
+    var sirtaki = { s: 'sirtaki', t: 64, w: function (l) { return l.mittel ? 2 : 1.2; },
+                    dann: function (b) { b.sirtakiTraf = false; } };
     if (!this.sparta) {
-      if (r < 0.24) this.go('teller', 30);
-      else if (r < 0.42) this.go('sirtaki', 60);
-      else if (r < 0.60) this.go('dashprep', 18);
-      else if (r < 0.76) this.go('oliven', 30);
-      else if (r < 0.88) this.go('sprung', 50);
-      else this.go('walk', 36);
+      waehle(this, g, [
+        { s: 'teller', t: 30, w: function (l) { return l.nah ? 1 : 2.6; } },
+        sirtaki,
+        { s: 'dashprep', t: 18, w: function (l) { return l.mittel || l.weit ? 2.4 : 0.8; } },
+        { s: 'oliven', t: 30, w: function (l) { return l.oben ? 2.6 : 1.4; } },
+        { s: 'sprung', t: 50, w: function (l) { return l.ueber || l.oben ? 3 : 1; } },
+        { s: 'walk', t: 36, w: function (l) { return l.weit ? 1.2 : 0.2; } }
+      ]);
       return;
     }
     // Das Pferd kommt nie zweimal hintereinander — und nie, solange noch eins rollt
@@ -4601,28 +5818,34 @@
     for (var i = 0; i < g.projectiles.length; i++) {
       if (g.projectiles[i] && g.projectiles[i].t === 'pferd' && !g.projectiles[i].dead) pferdDa = true;
     }
-    var darfPferd = !pferdDa && this.last !== 'pferd';
-    if (this.oma && r < 0.16) { this.go('tzatziki', 74); this.last = 'tzatziki'; return; }
-    if (this.phase === 2) {
-      if (r < 0.28) this.go('speerprep', 22);
-      else if (r < 0.44) this.go('trittprep', 24);
-      else if (r < 0.58 && darfPferd) this.go('pferd', 50);
-      else if (r < 0.72) this.go('phalanx', 60);
-      else if (r < 0.86) this.go('dashprep', 16);
-      else this.go('sprung', 50);
-    } else {
-      if (r < 0.30) this.go('speerprep', 16);
-      else if (r < 0.46) this.go('trittprep', 18);
-      else if (r < 0.62 && darfPferd) this.go('pferd', 46);
-      else if (r < 0.78) this.go('phalanx', 56);
-      else if (r < 0.90) this.go('dashprep', 12);
-      else this.go('sprung', 48);
-    }
-    this.last = this.state;
+    w = waehle(this, g, [
+      { s: 'speerprep', t: P3 ? 16 : 22, w: function (l) { return l.mittel || l.weit ? 3 : 1; } },
+      { s: 'trittprep', t: P3 ? 18 : 24, w: function (l) { return l.nah ? 3 : 0.8; } },
+      { s: 'schild', t: 64, w: function (l) { return l.luft || l.ueber ? 3 : 1; } },
+      !pferdDa ? { s: 'pferd', t: P3 ? 46 : 50, w: 1.4 } : null,
+      { s: 'phalanx', t: P3 ? 56 : 60, w: function (l) { return l.oben ? 2.6 : 1.4; } },
+      { s: 'dashprep', t: P3 ? 12 : 16, w: function (l) { return l.weit ? 2 : 0.8; } },
+      { s: 'sprung', t: 50, w: function (l) { return l.ueber || l.oben ? 2.4 : 0.8; } },
+      sirtaki,
+      this.oma ? { s: 'tzatziki', t: 74, w: 1.8 } : null
+    ]);
+    // Omas Liebling: Speer und gleich hinterher der Schildstoss
+    if (P3 && w && w.s === 'speerprep' && Math.random() < 0.6) kombo(this, [['trittprep', 12]]);
   };
 
   BossGeorgios.prototype.hit = function (g, dmg, p) {
     if (this.invuln > 0 || this.dead || this.state === 'transform') return;
+    // Schild oben: KLONG. Kein Schaden, und er stoesst sofort zu.
+    if (this.state === 'schild' && p) {
+      this.invuln = 18;
+      p.vy = -8.6; p.jumpsLeft = 1;
+      global.Sound.play('klirr');
+      g.shake(4, 10);
+      g.particles.burst(this.cx(), this.y + 10, 12, { col: '#f0c860', spread: 2.6, up: 1.2, life: 22 });
+      g.floats.add(this.cx(), this.y - 10, 'KLONG!', '#f0c860', 40);
+      this.go('trittprep', 14);
+      return;
+    }
     this.hp -= dmg;
     bossBounce(this, g, p, '#2a5ab8', dmg);
     if (this.hp > 0) return;
@@ -4657,7 +5880,10 @@
       dreiHerzen: dreiHerzen, herzWeg: herzWeg, herzPhase: herzPhase, naechstesLeben: naechstesLeben,
       klugLaufen: klugLaufen, AUSWEICHEN: AUSWEICHEN,
       groundWaves: groundWaves, rainFromSky: rainFromSky, rageSparks: rageSparks,
-      clearShots: clearShots, POUND_BOSS_DMG: POUND_BOSS_DMG
+      clearShots: clearShots, POUND_BOSS_DMG: POUND_BOSS_DMG,
+      // Kampf-Hirn (Hollow Knight / Mario)
+      lage: lage, waehle: waehle, kombo: kombo, komboWeiter: komboWeiter,
+      betaeuben: betaeuben, tickBetaeubt: tickBetaeubt, spott: spott, schlag: schlag, anWand: anWand, sagt: sagt
     },
     Particles: Particles,
     Floats: Floats,

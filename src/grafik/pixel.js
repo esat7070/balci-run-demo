@@ -2229,6 +2229,91 @@
   def('h_arm', ARM_THIN, 'huseyin');
   def('h_leg', LEG_THIN, 'huseyin');
 
+  /* Huseyin oben ohne (zweite Form, Esat 02.10.): Sixpack, Brustmuskeln,
+     die Silberkette auf nackter Haut. Dritte Form Muay Thai: rote Thai-
+     Shorts mit Goldsaum, Boxhandschuhe, Mongkhon (Stirnband), Fuss-
+     bandagen, barfuss. */
+  palettes.huseyin.a = '#f8cca2';   // Licht auf den Muskeln
+  palettes.huseyin.v = '#b07650';   // Muskelkanten
+  palettes.huseyin.f = '#d8202a';   // Thai-Rot
+  palettes.huseyin.F = '#ffd257';   // Goldsaum
+  palettes.huseyin.e = '#f4f0e4';   // Bandage / Mongkhon weiss
+  var H_TORSO_SIX = `
+    ..kkkk..
+    .kssssk.
+    kaassaak
+    kasyysak
+    kvvsvvsk
+    ksavvask
+    ksvvvvsk
+    ksavvask
+    ksvvvvsk
+    .kavvak.
+    .kbbbbk.
+    ..kkkk..
+  `;
+  var H_TORSO_MT = `
+    ..kkkk..
+    .kssssk.
+    kaassaak
+    kasyysak
+    kvvsvvsk
+    ksavvask
+    ksvvvvsk
+    ksavvask
+    ksvvvvsk
+    .kavvak.
+    .kFFFFk.
+    .kffffk.
+  `;
+  var H_ARM_SIX = `
+    .kk.
+    kask
+    kssk
+    kvsk
+    .kk.
+    .ksk
+    ksdk
+    ksdk
+    .kk.
+  `;
+  var H_ARM_MT = `
+    .kk..
+    kask.
+    kssk.
+    kvsk.
+    .kk..
+    keek.
+    kfffk
+    kfFfk
+    kfffk
+    .kkk.
+  `;
+  var H_LEG_MT = `
+    .kk.
+    kffk
+    kffk
+    kFFk
+    kssk
+    .ks.
+    .kd.
+    keek
+    kssk
+  `;
+  function mitBand(src) {
+    var rows = art(src);
+    rows[4] = '.kffffffffffk.';
+    return rows;
+  }
+  def('h_torso_six', H_TORSO_SIX, 'huseyin');
+  def('h_arm_six', H_ARM_SIX, 'huseyin');
+  def('h_torso_mt', H_TORSO_MT, 'huseyin');
+  def('h_arm_mt', H_ARM_MT, 'huseyin');
+  def('h_leg_mt', H_LEG_MT, 'huseyin');
+  def('h_head_mt', mitBand(H_HEAD), 'huseyin');
+  def('h_head_mt_angry', mitBand(H_HEAD_ANGRY), 'huseyin');
+  def('h_head_mt_hurt', mitBand(H_HEAD_HURT), 'huseyin');
+
   /* ---------------------------------------------------------------
      Figuren-Konfiguration & Posen
      --------------------------------------------------------------- */
@@ -2360,6 +2445,27 @@
       heads: { normal: 'h_head', laugh: 'h_head_angry', hurt: 'h_head_hurt',
                sleep: 'h_head', eat: 'h_head_angry' },
       torso: 'h_torso', arm: 'h_arm', leg: 'h_leg',
+      headOX: -3, headOY: -11,
+      armBackOX: -3, armFrontOX: 7, armOY: 2,
+      legLOX: 0, legROX: 4, legOY: 10,
+      footY: 19,
+      height: 30, width: 8
+    },
+    // Huseyin oben ohne / im Muay Thai (Level 5, zweite und dritte Form)
+    huseyin_sixpack: {
+      heads: { normal: 'h_head', laugh: 'h_head_angry', hurt: 'h_head_hurt',
+               sleep: 'h_head', eat: 'h_head_angry', rage: 'h_head_angry' },
+      torso: 'h_torso_six', arm: 'h_arm_six', leg: 'h_leg',
+      headOX: -3, headOY: -11,
+      armBackOX: -3, armFrontOX: 7, armOY: 2,
+      legLOX: 0, legROX: 4, legOY: 10,
+      footY: 19,
+      height: 30, width: 8
+    },
+    huseyin_muaythai: {
+      heads: { normal: 'h_head_mt_angry', laugh: 'h_head_mt', hurt: 'h_head_mt_hurt',
+               sleep: 'h_head_mt', eat: 'h_head_mt', rage: 'h_head_mt_angry' },
+      torso: 'h_torso_mt', arm: 'h_arm_mt', leg: 'h_leg_mt',
       headOX: -3, headOY: -11,
       armBackOX: -3, armFrontOX: 7, armOY: 2,
       legLOX: 0, legROX: 4, legOY: 10,
@@ -2516,6 +2622,9 @@
       { h: 0, t: 1, lL: [-1, 0], lR: [2, 0], aB: [5, -5], aF: [2, -5] }
     ],
     punch: [{ h: 0, t: 0, lL: [-2, 0], lR: [3, 0], aB: [5, -5], aF: [8, -5] }],
+    // Muay Thai: Stosstritt nach vorn, fliegendes Knie
+    kick: [{ h: 0, t: -1, lL: [-2, 0], lR: [7, -5], aB: [4, -6], aF: [1, -6] }],
+    knee: [{ h: -1, t: -1, lL: [-2, 1], lR: [4, -8], aB: [5, -7], aF: [3, -8] }],
     // Auf dem Fahrrad: nach vorn gebeugt, Haende am Lenker, Beine treten
     ride: [
       { h: 0, t: 1, lL: [1, -4], lR: [4, -2], aB: [7, -2], aF: [-3, -2] },

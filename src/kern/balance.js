@@ -127,6 +127,13 @@
       semih2: 7      // pro Form, 3 Formen
     },
 
+    /* ---------- Schaden an Bossen (Esat, 02.10.) ----------
+       Yusuf macht an jedem Boss 30 % weniger Schaden. Umgesetzt als mehr
+       Energie pro Herz (Energie / 0.7): ein Sprung zaehlt weiter 1, der
+       Stampfer 0.5, ein BB ein Viertel — es braucht nur mehr davon. So
+       gilt es fuer alle Bosse gleich, auch fuer Sonnets BBs und den Riesen. */
+    SCHADEN_AN_BOSSE: 0.7,
+
     /* ---------- Die Kraftprobe am Ende (Level 30) ----------
        Jeder Druck schiebt den Balken um DRUCK. Pro Tick verliert man
        VERLUST, nach 5 Sekunden kommt pro Tick ZUWACHS dazu.
@@ -153,8 +160,10 @@
     var basis = B.BOSS_HP[typ];
     if (basis) {
       // Pro Herz mindestens 2 — sonst waere "Leicht" bei den kleinen
-      // Bossen nicht leichter als "Normal"
+      // Bossen nicht leichter als "Normal". Dann 30 % weniger Schaden
+      // (SCHADEN_AN_BOSSE), auf ein Zehntel gerundet.
       var hp = Math.max(2, Math.round(basis * B.s('bossHp')));
+      hp = Math.round(hp / B.SCHADEN_AN_BOSSE * 10) / 10;
       boss.maxHp = hp; boss.hp = hp;
     }
     var f = B.s('bossPause');

@@ -1074,6 +1074,17 @@
       tone({ at: t, wave: 'sawtooth', f0: 180, f1: 60, dur: 0.3, gain: 0.35 });
       for (var i = 0; i < 3; i++) noise({ at: t + 0.05 + i * 0.05, filter: 'highpass', f0: 3800 - i * 500, dur: 0.06, gain: 0.16 });
     },
+    // Der Anlasser: wrr-wrr-wrr, dann springt der V8 an (BRRAP)
+    anlasser: function () {
+      if (!init()) return;
+      var t = ctx.currentTime;
+      for (var i = 0; i < 3; i++) {
+        tone({ at: t + i * 0.19, wave: 'sawtooth', f0: 92, f1: 128, dur: 0.15, gain: 0.22, vibrato: 18, vibratoDepth: 14 });
+        noise({ at: t + i * 0.19, filter: 'bandpass', f0: 900, f1: 600, dur: 0.14, gain: 0.08 });
+      }
+      noise({ at: t + 0.6, filter: 'lowpass', f0: 1800, f1: 200, dur: 0.35, gain: 0.45 });
+      tone({ at: t + 0.6, wave: 'square', f0: 70, f1: 140, dur: 0.3, gain: 0.3 });
+    },
     // Salat an der Scheibe
     klatsch: function () {
       noise({ filter: 'lowpass', f0: 1400, f1: 300, dur: 0.12, gain: 0.4 });
@@ -1082,29 +1093,96 @@
   };
 
   /* ------------------------- Motor und Fahrtwind -------------------------
-     Ein Dauerton, solange gefahren wird: motor(art, k) bei jedem Schritt
-     aufrufen (k = Tempo 0..1, art 'auto' oder 'rad'). Kommt laenger kein
-     Aufruf (Pause, Menue, Level vorbei), wird er von selbst leise. */
+     Ein Dauerton, solange gefahren wird: motor(art, k, extra) bei jedem
+     Schritt aufrufen (k = Tempo 0..1.4, art 'auto' oder 'rad'). Kommt
+     laenger kein Aufruf (Pause, Menue, Level vorbei), wird er von selbst
+     leise. extra: gas (Fuss auf dem Gas), boost (Nitro), luft (in der Luft).
+
+     Das Auto ist ein Mustang, also ein V8 (Esat, 02.10.: "Autosound
+     brachialer, richtigen V8-Sound"). Gebaut wie ein echter:
+       - Zuendfrequenz = Drehzahl / 60 * 4 (acht Zylinder, vier Takte)
+       - darunter das Kurbelwellen-Brummen (halbe und viertel Frequenz)
+       - das Blubbern des V8: die Lautstaerke pulsiert mit einem Viertel
+         und einem Achtel der Zuendfrequenz — im Leerlauf deutlich
+         ("potato-potato"), oben glatter
+       - durch eine Verzerrung (Saettigung), dann ein Tiefpass, der bei Gas
+         weit aufmacht
+       - fuenf Gaenge: die Drehzahl steigt, beim Hochschalten faellt sie
+         (mit einem kurzen Knick), in der Luft heult er auf
+       - wer vom Gas geht, hoert den Auspuff patschen
+       - Nitro: noch heller, noch lauter */
   var motorN = null, motorZuletzt = -1, motorGestellt = -1;
+  var MZ = { rpm: 850, gang: 0, gas: false, knickT: 0 };
+  var GAENGE = [0, 0.2, 0.4, 0.6, 0.8, 1.04, 9];
+
+  function v8Welle() {
+    // Schmaler Auspuff-Puls mit kraeftiger zweiter Harmonischer
+    var n = 40, real = new Float32Array(n), imag = new Float32Array(n), d = 0.18;
+    for (var i = 1; i < n; i++) imag[i] = (2 / (i * Math.PI)) * Math.sin(Math.PI * i * d) * (i === 2 ? 1.5 : 1);
+    return ctx.createPeriodicWave(real, imag, { disableNormalization: false });
+  }
+  function saettigung(drive) {
+    var n = 1024, c = new Float32Array(n), d = Math.tanh(drive);
+    for (var i = 0; i < n; i++) { var x = i / (n - 1) * 2 - 1; c[i] = Math.tanh(x * drive) / d; }
+    return c;
+  }
+
+  function motorBauen() {
+    var o1 = ctx.createOscillator(), o2 = ctx.createOscillator(), o3 = ctx.createOscillator();
+    var mix = ctx.createGain(), sub = ctx.createGain(), sub2 = ctx.createGain();
+    var shaper = ctx.createWaveShaper(), lp = ctx.createBiquadFilter();
+    var am = ctx.createGain(), knick = ctx.createGain(), out = ctx.createGain();
+    var lfo1 = ctx.createOscillator(), lfo2 = ctx.createOscillator(), d1 = ctx.createGain(), d2 = ctx.createGain();
+    var rn = ctx.createBufferSource(), rbp = ctx.createBiquadFilter(), rg = ctx.createGain();
+    o1.setPeriodicWave(v8Welle());
+    o2.type = 'triangle'; o3.type = 'sine';
+    sub.gain.value = 0.7; sub2.gain.value = 0.55; mix.gain.value = 0.9;
+    shaper.curve = saettigung(3.2); shaper.oversample = '2x';
+    lp.type = 'lowpass'; lp.frequency.value = 600; lp.Q.value = 3.2;
+    am.gain.value = 0.8; knick.gain.value = 1; out.gain.value = 0.0001;
+    lfo1.type = 'sine'; lfo2.type = 'triangle';
+    d1.gain.value = 0.25; d2.gain.value = 0.18;
+    // Rauer Auspuff: Rauschen um die doppelte Zuendfrequenz, pulsiert mit
+    rn.buffer = noiseBuf; rn.loop = true;
+    rbp.type = 'bandpass'; rbp.frequency.value = 300; rbp.Q.value = 1.4;
+    rg.gain.value = 0.35;
+    o1.connect(mix); o2.connect(sub); sub.connect(mix); o3.connect(sub2); sub2.connect(mix);
+    rn.connect(rbp); rbp.connect(rg); rg.connect(mix);
+    mix.connect(shaper); shaper.connect(lp); lp.connect(am); am.connect(knick); knick.connect(out); out.connect(sfxGain);
+    lfo1.connect(d1); d1.connect(am.gain); lfo2.connect(d2); d2.connect(am.gain);
+    // Fahrtwind
+    var wn = ctx.createBufferSource(), wf = ctx.createBiquadFilter(), wg = ctx.createGain();
+    wn.buffer = noiseBuf; wn.loop = true;
+    wf.type = 'bandpass'; wf.frequency.value = 700; wf.Q.value = 0.55;
+    wg.gain.value = 0.0001;
+    wn.connect(wf); wf.connect(wg); wg.connect(sfxGain);
+    [o1, o2, o3, lfo1, lfo2, rn, wn].forEach(function (o) { o.start(); });
+    motorN = { o1: o1, o2: o2, o3: o3, lfo1: lfo1, lfo2: lfo2, d1: d1, d2: d2, am: am, lp: lp, rbp: rbp,
+               knick: knick, out: out, wf: wf, wg: wg };
+    setInterval(motorWache, 120);
+  }
+
+  /** Beim Hochschalten: ganz kurz weg vom Gas, dann wieder voll. */
+  function schaltKnick(t) {
+    var kg = motorN.knick.gain;
+    kg.cancelScheduledValues(t);
+    kg.setValueAtTime(1, t);
+    kg.linearRampToValueAtTime(0.3, t + 0.035);
+    kg.linearRampToValueAtTime(1, t + 0.17);
+    noise({ at: t, filter: 'bandpass', f0: 2400, dur: 0.03, gain: 0.08, q: 2 });
+  }
+  /** Patschen im Auspuff, wenn man bei hoher Drehzahl vom Gas geht. */
+  function patschen(t, n) {
+    for (var i = 0; i < n; i++) {
+      var at = t + 0.06 + i * 0.09 + Math.random() * 0.05;
+      noise({ at: at, filter: 'lowpass', f0: 2600, f1: 260, dur: 0.045, gain: 0.32 });
+      tone({ at: at, wave: 'square', f0: 110, f1: 46, dur: 0.04, gain: 0.16 });
+    }
+  }
+
   function motor(art, k, extra) {
     if (!ready || !ctx || ctx.state === 'closed') return;
-    if (!motorN) {
-      var o1 = ctx.createOscillator(), o2 = ctx.createOscillator();
-      var f = ctx.createBiquadFilter(), g = ctx.createGain();
-      o1.type = 'sawtooth';
-      o2.setPeriodicWave(waves.p25);
-      f.type = 'lowpass'; f.frequency.value = 500; f.Q.value = 2.2;
-      g.gain.value = 0.0001;
-      o1.connect(f); o2.connect(f); f.connect(g); g.connect(sfxGain);
-      var wn = ctx.createBufferSource(), wf = ctx.createBiquadFilter(), wg = ctx.createGain();
-      wn.buffer = noiseBuf; wn.loop = true;
-      wf.type = 'bandpass'; wf.frequency.value = 700; wf.Q.value = 0.55;
-      wg.gain.value = 0.0001;
-      wn.connect(wf); wf.connect(wg); wg.connect(sfxGain);
-      o1.start(); o2.start(); wn.start();
-      motorN = { o1: o1, o2: o2, f: f, g: g, wf: wf, wg: wg };
-      setInterval(motorWache, 120);
-    }
+    if (!motorN) motorBauen();
     motorZuletzt = ctx.currentTime;
     // Nicht oefter als alle 30 ms nachstellen (sonst stapeln sich die Rampen)
     if (motorGestellt >= 0 && ctx.currentTime - motorGestellt < 0.03) return;
@@ -1113,13 +1191,36 @@
     k = Math.max(0, Math.min(1.4, k || 0));
     extra = extra || {};
     if (art === 'auto') {
-      var hz = 38 + k * 92 + (extra.boost ? 24 : 0) + (extra.luft ? 30 : 0);
-      n.o1.frequency.setTargetAtTime(hz, t, 0.06);
-      n.o2.frequency.setTargetAtTime(hz * 0.5, t, 0.06);
-      n.f.frequency.setTargetAtTime(320 + k * 820 + (extra.boost ? 600 : 0), t, 0.08);
-      n.g.gain.setTargetAtTime(Math.max(0.0001, (0.045 + k * 0.05) * an), t, 0.08);
+      var gas = extra.gas === undefined ? true : !!extra.gas;
+      // Gang und Drehzahl aus dem Tempo
+      var gang = 0;
+      while (gang < 5 && k > GAENGE[gang + 1]) gang++;
+      var anteil = Math.max(0, Math.min(1.15, (k - GAENGE[gang]) / (GAENGE[gang + 1] - GAENGE[gang])));
+      var unten = gang === 0 ? 850 : 3300;
+      var rpm = unten + anteil * (6300 - unten);
+      if (k < 0.03) rpm = gas ? 2600 + Math.random() * 300 : 850;     // im Stand: Leerlauf oder Gasstoss
+      if (extra.luft) rpm = Math.min(7300, rpm * 1.18 + 700);
+      if (extra.boost) rpm = Math.min(7300, rpm + 450);
+      if (gang > MZ.gang && MZ.gas && gas && k > 0.05) schaltKnick(t);
+      if (MZ.gas && !gas && MZ.rpm > 3600) patschen(t, 2 + ((Math.random() * 3) | 0));
+      else if (!gas && MZ.rpm > 3000 && Math.random() < 0.05) patschen(t, 1);
+      MZ.gang = gang; MZ.gas = gas; MZ.rpm = rpm;
+      var f = rpm / 15;                                     // Zuendfrequenz
+      n.o1.frequency.setTargetAtTime(f, t, 0.045);
+      n.o2.frequency.setTargetAtTime(f / 2, t, 0.045);
+      n.o3.frequency.setTargetAtTime(f / 4, t, 0.045);
+      n.lfo1.frequency.setTargetAtTime(f / 4, t, 0.045);
+      n.lfo2.frequency.setTargetAtTime(f / 8, t, 0.045);
+      n.rbp.frequency.setTargetAtTime(f * 2, t, 0.06);
+      var lope = Math.max(0.12, Math.min(1, 1 - (rpm - 850) / 4200));
+      n.d1.gain.setTargetAtTime(0.3 * lope, t, 0.08);
+      n.d2.gain.setTargetAtTime(0.22 * lope, t, 0.08);
+      n.am.gain.setTargetAtTime(1 - 0.28 * lope, t, 0.08);
+      n.lp.frequency.setTargetAtTime(240 + rpm * (gas ? 0.5 : 0.2) + (extra.boost ? 1100 : 0), t, 0.06);
+      var laut = 0.034 + Math.min(1, k) * 0.03 + (gas ? 0.045 : 0.01) + (extra.boost ? 0.025 : 0);
+      n.out.gain.setTargetAtTime(Math.max(0.0001, laut * an), t, 0.07);
     } else {
-      n.g.gain.setTargetAtTime(0.0001, t, 0.08);
+      n.out.gain.setTargetAtTime(0.0001, t, 0.08);
     }
     n.wf.frequency.setTargetAtTime(420 + k * 1500, t, 0.1);
     n.wg.gain.setTargetAtTime(Math.max(0.0001, (0.01 + k * k * (art === 'rad' ? 0.11 : 0.06)) * an), t, 0.1);
@@ -1127,9 +1228,10 @@
   function motorWache() {
     if (!motorN || !ctx) return;
     if (ctx.currentTime - motorZuletzt > 0.25 || muted) {
-      motorN.g.gain.setTargetAtTime(0.0001, ctx.currentTime, 0.06);
+      motorN.out.gain.setTargetAtTime(0.0001, ctx.currentTime, 0.06);
       motorN.wg.gain.setTargetAtTime(0.0001, ctx.currentTime, 0.06);
       motorGestellt = -1;
+      MZ.gas = false; MZ.gang = 0;
     }
   }
 
