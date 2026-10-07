@@ -351,6 +351,8 @@
     // weiter) kommt nach einem Tod nicht noch einmal
     if (respawn && G.bossErledigt) { G.bossStarted = true; G.bossCleared = true; }
     G.frozen = false;
+    // Begegnungen, Hinterhalte, Verstecke (strecke.js)
+    if (global.Strecke) global.Strecke.laden(G, lvl, respawn);
     if (global.Spass) global.Spass.laden(G, respawn);
   }
 
@@ -375,6 +377,8 @@
     rec.score = Math.max(rec.score, p.score - st.score);
     rec.time = Math.min(rec.time, Math.floor(G.time / 60));
     save.best[idx] = rec;
+    // Danach kommt der Gruppenchat (vor dem naechsten Level, chat.js)
+    G.chatVon = idx;
     save.gold[idx] = (save.gold[idx] || 0) | goldMask();
     persist();
     // Der Rang fuer dieses Level (und was er an Trophaeen bringt)
@@ -386,6 +390,7 @@
     var t = G.scene && G.scene.type;
     if (t === 'mahl') return global.Mahl;
     if (t === 'shisha') return global.Shisha;
+    if (t === 'chat') return global.Chat;
     // Sicherheitskontrolle und Hotel (reise.js)
     if (global.Reise && global.Reise.szenen[t]) return global.Reise.szenen[t];
     // Entfuehrung, Niederlage, Suche, Ende (finale.js)
@@ -690,6 +695,20 @@
       Level ueber die Levelauswahl oder WEITER startet. */
   function levelIntro(idx) {
     var lvl = LV.list[idx];
+    // Gerade das Level davor geschafft? Dann erst aufs Handy schauen:
+    // der Gruppenchat (chat.js, Texte in levels.js)
+    var chat = (LV.chats && G.chatVon === idx - 1) ? LV.chats[lvl.id] : null;
+    G.chatVon = null;
+    if (chat && global.Chat && !global.Chat.aus) {
+      startScene(global.Chat.init(chat, function () {
+        fadeTo(function () {
+          G.scene = null;
+          G.frozen = false;
+          levelIntro(idx);
+        });
+      }));
+      return;
+    }
     // An einem neuen Tag steht vorne die Kapitelkarte mit dem Kalender
     var lines = (LV.kapitel && LV.kapitel[lvl.id]) ? [['kapitel', String(lvl.id)]].concat(lvl.intro) : lvl.intro;
     var intro = function () { startDialog(lines, function () { G.state = 'play'; }); };
@@ -1236,6 +1255,7 @@
       G.lastName = null; G.lastScore = null;
       if (global.Spass) global.Spass.neuerDurchgang(G);
       S.music(LV.list[idx].music);
+      G.chatVon = null;
       levelIntro(idx);
     });
   }
@@ -1473,6 +1493,9 @@
         G.particles.burst(cx + 12, cy - 6, 14, { col: '#ffd257', spread: 2.4, up: 1, life: 30 });
       }
     }
+
+    // Leute am Weg, Hinterhalte, falsche Waende (strecke.js)
+    if (global.Strecke && !frozen && !G.cut) global.Strecke.update(G);
 
     // Boss auslösen
     if (G.arena && !G.bossStarted && p.cx() > G.arena.x + 56) {
@@ -2976,6 +2999,7 @@
     drawBlocks(camX, camY);
     drawMovers(camX, camY);
     if (G.world.kickers.length) drawKickers(camX, camY);
+    if (global.Strecke) global.Strecke.hinten(ctx, G, camX, camY);
     // Bloom jetzt einfangen: Hintergrund, Lampen, Kacheln — noch ohne Figuren
     if (EB) EB.bloomFangen(canvas, theme, W, H);
 
@@ -3146,6 +3170,8 @@
     // Der Kumpel hinter Yusuf (Level 14, 15, 22)
     if (G.rider && G.rider.pos) drawRider(camX, camY);
     drawPlayer(camX, camY);
+    // Falsche Waende liegen VOR Yusuf (er verschwindet dahinter, bis sie verblassen)
+    if (global.Strecke) global.Strecke.vorne(ctx, G, camX, camY);
     if (G.fress) global.Fress.draw(ctx, G, camX, camY);
     drawParticles(camX, camY);
     drawFloats(camX, camY);
@@ -4867,6 +4893,9 @@
       ['LEBEN ÜBRIG', '' + Math.max(0, p.lives)]
     ];
     if (nGold) rows.splice(1, 0, ['GOLDHONIG', got + ' VON ' + nGold]);
+    // Gefundene Verstecke (falsche Waende, strecke.js) — wie die Sterne bei Mario
+    var stS = global.Strecke ? global.Strecke.stand(G) : null;
+    if (stS && stS.verstecke) rows.splice(nGold ? 2 : 1, 0, ['GEHEIMNISSE', stS.gefunden + ' VON ' + stS.verstecke]);
     rows.push(['AURA', '' + (p.aura || 0)]);
     for (var i = 0; i < rows.length; i++) {
       var y = 76 + i * 16;
