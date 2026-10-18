@@ -54,6 +54,7 @@
       STAMPFER_BOSS: 0.5,      // Stampfer auf Bosse: halber Schaden
       EINSCHLAFEN_NACH: 300,   // Ticks Stillstehen, bis Yusuf einschlaeft
       TOD_DAUER: 70,           // Ticks vom Tod bis zur Blende (frueher 100)
+      TOD_SCHNELL: 24,         // ab da darf Sprung die Todesanimation abkuerzen
       UNVERWUNDBAR_RESPAWN: 90 // blinken nach dem Wiedereinstieg
     },
 

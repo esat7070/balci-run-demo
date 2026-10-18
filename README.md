@@ -9,6 +9,8 @@ Huseyin im Weg.
 
 - **5 Level**, 4 Bosse mit je drei Herzen und drei Formen
 - Honig und Goldhonig sammeln, Trophäen, Bestenliste im eigenen Browser
+- **Honig-Shop:** Kostüme, Hüte und Spuren für Yusuf, bezahlt mit dem Honig aus
+  den Leveln, dazu Aufträge der Jungs
 - Kein Game Over: weiter geht es immer am letzten Checkpoint
 
 ## Steuerung

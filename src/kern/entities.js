@@ -817,6 +817,8 @@
     }
     // Schockwelle (und eine sichtbare Druckwelle am Boden, ebenen.js)
     if (g.einschlag) g.einschlag(this.cx(), this.feet(), 'stampfer');
+    // g.stampfer: wer jetzt umfaellt, fiel durch den Stampfer (Auftraege, shop.js)
+    g.stampfer = true;
     for (var i = 0; i < g.enemies.length; i++) {
       var e = g.enemies[i];
       if (e.dead) continue;
@@ -824,6 +826,7 @@
       var dy = Math.abs(e.y + e.h - this.feet());
       if (d < 52 && dy < 30) e.squash(g, this);
     }
+    g.stampfer = false;
     if (g.boss && !g.boss.dead) {
       var bd = Math.abs(g.boss.x + g.boss.w / 2 - this.cx());
       var bdy = Math.abs(g.boss.y + g.boss.h - this.feet());
@@ -960,6 +963,13 @@
     if (!this.hitCall) {
       this.vy += GRAV * 0.75;
       this.y += this.vy;
+    }
+    // Wer schon wieder will, muss nicht warten: Sprung nach einer kurzen
+    // Schrecksekunde = sofort weiter (wie bei Super Meat Boy). Die Tests
+    // zaehlen Ticks und schalten das ab (g.keinSchnellerNeustart).
+    if (this.deadTimer > SP.TOD_SCHNELL && this.deadTimer < SP.TOD_DAUER && !this.deadHandled &&
+        !g.keinSchnellerNeustart && global.Input.hit('jump')) {
+      this.deadTimer = SP.TOD_DAUER;
     }
     // Nur EINMAL melden — sonst frisst die Blende alle Leben auf.
     if (this.deadTimer > SP.TOD_DAUER && !this.deadHandled) {

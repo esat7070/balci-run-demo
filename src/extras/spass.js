@@ -212,7 +212,9 @@
 
   /** Jeden Tick, egal in welchem Zustand: Hinweise laufen ab, Schlaf zaehlt */
   function immer(G) {
-    if (G.toasts && G.toasts.length && G.state !== 'paused') {
+    // In der Pause und im Shop warten die Hinweise (im Shop stuenden sie
+    // ueber Preis und Beschreibung) — sie kommen danach
+    if (G.toasts && G.toasts.length && G.state !== 'paused' && G.state !== 'shop') {
       if (--G.toasts[0].zeit <= 0) G.toasts.shift();
     }
     var sc = G.scene;
@@ -365,7 +367,7 @@
 
   function drawOben(ctx, G, W, H) {
     var t = G.toasts && G.toasts[0];
-    if (!t) return;
+    if (!t || G.state === 'shop') return;
     var y = Math.min(8, -40 + (200 - t.zeit) * 4);
     if (t.zeit < 12) y = 8 - (12 - t.zeit) * 4;
     // Ausserhalb des Spiels (Ergebnis, Wrapped, Game Over, Teaser) kommt

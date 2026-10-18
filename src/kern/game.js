@@ -207,6 +207,8 @@
 
   // Rang, Trophaeen, Aura, Grabsteine, Wrapped (spass.js)
   if (global.Spass) global.Spass.init(G, save, persist);
+  // Honigkonto, Shop, Auftraege (shop.js)
+  if (global.Shop) global.Shop.init(G, save);
 
   /* ================= Level laden ================= */
 
@@ -383,6 +385,8 @@
     persist();
     // Der Rang fuer dieses Level (und was er an Trophaeen bringt)
     if (global.Spass) global.Spass.levelFertig(G, idx);
+    // Honig aufs Konto, Auftraege (shop.js) — nach dem Rang, der gibt Bonus
+    if (global.Shop) global.Shop.levelFertig(G, idx);
   }
 
   /* Szenen ohne Huepfen (eat.js): Schlafen, Essen am Tisch, Shisha. */
@@ -547,6 +551,7 @@
   // Aus entities.js: Gegner erledigt, Boss getroffen, Goldhonig, Yusuf liegt
   G.onEnemyKill = function (e) {
     if (global.Spass) global.Spass.gegnerWeg(G, e);
+    if (global.Shop) global.Shop.gegnerWeg(G, e);
     if (EB && e) EB.einschlag(G, e.x + e.w / 2, e.y + e.h / 2, 'gegner');
   };
   G.onBossHit = function (b, dmg) {
@@ -1059,6 +1064,7 @@
       case 'play': if (G.hitstop > 0) G.hitstop--; else updatePlay(); break;
       case 'wrapped': global.Spass.wrappedUpdate(G); break;
       case 'trophaeen': global.Spass.trophUpdate(G); break;
+      case 'shop': global.Shop.update(G, W); break;
       case 'optionen': global.Optionen.update(G); break;
       case 'paused': updatePaused(); break;
       case 'clear': updateClear(); break;
@@ -1094,6 +1100,8 @@
     // Levelauswahl ist immer da. Freigeschaltet wird Level fuer Level,
     // damit man nach einem Absturz nicht wieder von vorne anfangen muss.
     items.push({ k: 'select', label: 'LEVEL WÄHLEN' });
+    // Kostueme, Huete, Spuren — bezahlt mit dem Honig aus den Leveln
+    if (global.Shop) items.push({ k: 'shop', label: 'SHOP (' + global.Shop.konto() + ' HONIG)' });
     items.push({ k: 'scores', label: 'BESTENLISTE' });
     items.push({ k: 'howto', label: 'STEUERUNG' });
     if (global.Spass) items.push({ k: 'troph', label: 'TROPHÄEN ' + global.Spass.anzahl() + '/' + global.Spass.gesamt });
@@ -1109,7 +1117,10 @@
 
   /* Wo die Dinge auf dem Titelbild liegen — Zeichnen und Antippen
      benutzen dieselben Masse. */
-  function titleMenuTop(n) { return 160 - (n - 5) * 9; }   // 8 Eintraege (Desktop mit WEITER) enden ueber dem Boden
+  // Ab neun Eintraegen (Desktop mit WEITER und SHOP) etwas enger, damit
+  // der letzte noch ueber dem Boden steht
+  function titleMenuStep(n) { return n > 8 ? 13 : 15; }
+  function titleMenuTop(n) { return Math.min(160 - (n - 5) * 9, 231 - (n - 1) * titleMenuStep(n)); }
   function titleBoardRect() { return { x: W - 158, y: 110, w: 150, h: 96 }; }
 
   function activateMenu(it) {
@@ -1121,6 +1132,7 @@
     else if (it.k === 'scores') openScores();
     else if (it.k === 'howto') G.state = 'howto';
     else if (it.k === 'troph') G.state = 'trophaeen';
+    else if (it.k === 'shop') global.Shop.oeffnen(G, 'title');
     else if (it.k === 'optionen') global.Optionen.oeffnen(G, 'title');
     else if (it.k === 'beenden') beenden();
   }
@@ -1146,10 +1158,10 @@
     // Am Handy: Menuepunkte direkt antippen
     var tp = global.Input.tap();
     if (tp) {
-      var top0 = titleMenuTop(n);
+      var top0 = titleMenuTop(n), step = titleMenuStep(n);
       for (var i = 0; i < n; i++) {
         var half = F.measure(items[i].label, 1, 1) / 2 + 24;
-        if (inRect(tp, { x: W / 2 - half, y: top0 + i * 15 - 5, w: half * 2, h: 15 })) {
+        if (inRect(tp, { x: W / 2 - half, y: top0 + i * step - 5, w: half * 2, h: step })) {
           G.menuIdx = i;
           activateMenu(items[i]);
           return;
@@ -1427,6 +1439,7 @@
     p.update(G);
     // Staub, Stauchen, Aura-Farming, Grabsteine (spass.js)
     if (global.Spass && !frozen) global.Spass.tick(G);
+    if (global.Shop && !frozen) global.Shop.tick(G);
 
     if (G.comboTimer > 0) { G.comboTimer--; if (G.comboTimer === 0) G.combo = 0; }
     if (p.grounded) G.comboTimer = Math.min(G.comboTimer, 20);
@@ -2025,6 +2038,7 @@
   function updateClear() {
     G.resultTimer++;
     G.particles.update();
+    if (global.Shop) global.Shop.ergebnisTick(G, G.resultTimer);
     if (G.resultTimer > 40 && (global.Input.hit('jump') || global.Input.hit('confirm'))) {
       S.play('select');
       var next = G.lvlIndex + 1;
@@ -2111,6 +2125,7 @@
     else if (G.state === 'nameentry') { drawNameEntry(); }
     else if (G.state === 'wrapped') { global.Spass.wrappedDraw(ctx, G, W, H); }
     else if (G.state === 'trophaeen') { global.Spass.trophDraw(ctx, G, W, H); }
+    else if (G.state === 'shop') { global.Shop.draw(ctx, G, W, H); }
     else if (G.state === 'optionen') {
       // Aus der Pause: das Spiel bleibt dahinter stehen
       if (G.optZurueck === 'paused') drawDrunkOrPlain(); else drawTitle();
@@ -4546,11 +4561,11 @@
     }
 
     var items = menuItems();
-    var top0 = titleMenuTop(items.length);
+    var top0 = titleMenuTop(items.length), step = titleMenuStep(items.length);
     for (i = 0; i < items.length; i++) {
       var it = items[i];
       var sel = (i === G.menuIdx);
-      var y = top0 + i * 15;
+      var y = top0 + i * step;
       if (sel) {
         F.draw(ctx, '|', W / 2 - F.measure(it.label, 1, 1) / 2 - 14, y,
                { color: '#ffd257' });
@@ -4863,6 +4878,8 @@
   function drawPause() {
     ctx.fillStyle = 'rgba(8,5,12,0.78)';
     ctx.fillRect(0, 0, W, H);
+    // Oben: die drei Auftraege der Jungs (shop.js)
+    if (global.Shop) global.Shop.drawPause(ctx, G, W);
     F.draw(ctx, 'PAUSE', W / 2, 100, { color: '#ffd257', align: 'center', scale: 4, shadow: true });
     F.draw(ctx, 'YUSUF MACHT SOWIESO GERADE PAUSE.', W / 2, 146,
            { color: '#c8b8e0', align: 'center' });
@@ -4897,13 +4914,19 @@
     var stS = global.Strecke ? global.Strecke.stand(G) : null;
     if (stS && stS.verstecke) rows.splice(nGold ? 2 : 1, 0, ['GEHEIMNISSE', stS.gefunden + ' VON ' + stS.verstecke]);
     rows.push(['AURA', '' + (p.aura || 0)]);
+    // Was davon aufs Honigkonto kam (shop.js), zaehlt hoch
+    var konto = global.Shop ? global.Shop.ergebnisZeile(G, G.resultTimer) : null;
+    if (konto) rows.splice(1, 0, konto);
+    var zeile = rows.length > 7 ? 14 : 16;
     for (var i = 0; i < rows.length; i++) {
-      var y = 76 + i * 16;
+      var y = 76 + i * zeile;
       F.draw(ctx, rows[i][0], 70, y, { color: '#c8b8e0' });
       F.draw(ctx, rows[i][1], W - 190, y, { color: '#ffffff', align: 'right' });
     }
     // Der Rang als Stempel (wie bei Pizza Tower), darunter, was noch fehlt
     if (global.Spass) global.Spass.drawRang(ctx, G, W - 90, 100);
+    // Kontostand und wofuer es bald reicht (shop.js)
+    if (global.Shop) global.Shop.drawErgebnis(ctx, G, W - 130, 198, G.resultTimer);
 
     P.drawChar(ctx, 'yusuf', 90, 214, { pose: 'cheer', face: 'laugh', frame: (G.tick >> 3) });
     // Was Yusuf zum Goldhonig sagt, haengt davon ab, wie viel er hat
@@ -5199,6 +5222,7 @@
   G._saveCopy = function () { return JSON.parse(JSON.stringify(save)); };
   G._menu = menuItems;
   G._titleMenuTop = titleMenuTop;
+  G._titleMenuStep = titleMenuStep;
   G._canvas = canvas;          // semih.js haelt das letzte Bild fest, wenn es zerspringt
   G.rs = function () { return RS; };
   G.viewH = function () { return H; };

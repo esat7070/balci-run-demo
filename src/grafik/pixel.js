@@ -2315,6 +2315,427 @@
   def('h_head_mt_hurt', mitBand(H_HEAD_HURT), 'huseyin');
 
   /* ---------------------------------------------------------------
+     YUSUFS KLEIDERSCHRANK — Kostueme und Huete aus dem Shop
+     (extras/shop.js waehlt aus, Pixel.tracht setzt es).
+     Ein Kostuem ersetzt Rumpf, Arme und Beine, der Kopf bleibt Yusuf.
+     Ein Hut sitzt auf dem Kopf und wackelt mit ihm mit. Gebaut aus
+     Yusufs Palette: nur die Buchstaben, die das Kostuem braucht, bekommen
+     neue Farben.
+     --------------------------------------------------------------- */
+
+  var KOSTUEME = {}, HUETE = {};
+  var tracht = { kostuem: null, hut: null };
+
+  function yPalette(neu) {
+    var p = {}, k;
+    for (k in palettes.yusuf) p[k] = palettes.yusuf[k];
+    for (k in neu) p[k] = neu[k];
+    return p;
+  }
+
+  function kostuem(id, farben, torso, arm, leg) {
+    var p = yPalette(farben);
+    def('y_torso_' + id, torso || TORSO_FAT, p);
+    def('y_arm_' + id, arm || ARM_FAT, p);
+    def('y_leg_' + id, leg || LEG_FAT, p);
+    KOSTUEME[id] = { torso: 'y_torso_' + id, arm: 'y_arm_' + id, leg: 'y_leg_' + id };
+  }
+
+  /** ox, oy: wo die linke obere Ecke des Huts liegt, gemessen an der
+      linken oberen Ecke von Yusufs Kopf (14 x 13, die Locken oben in
+      den Zeilen 0 bis 3). Yusuf schaut nach rechts. */
+  function hut(id, str, farben, ox, oy) {
+    def('hut_' + id, str, yPalette(farben));
+    HUETE[id] = { spr: 'hut_' + id, ox: ox, oy: oy };
+  }
+
+  /* --- Kostueme --- */
+
+  // Pyjama: blau-weiss gestreift, mit Knoepfen. Fuer den Weg zum Kuehlschrank.
+  kostuem('pyjama', { r: '#7ab0e8', R: '#5a8ac8', y: '#f4f8ff', Y: '#c8d8f0', q: '#ffffff',
+                      b: '#7ab0e8', B: '#f4f8ff', n: '#8a5a3a', N: '#6a4026' }, `
+    ...kkkkkkkkkkkkkk...
+    ..krrrrrrkkrrrrrrk..
+    ..kyyyyyykkyyyyyyk..
+    .krrrrrrrqrrrrrrrrk.
+    .kyyyyyyyyyyyyyyyyk.
+    krrrrrrrrqrrrrrrrrrk
+    kyyyyyyyyyyyyyyyyyyk
+    kRrrrrrrrqrrrrrrrrRk
+    kYyyyyyyyyyyyyyyyyYk
+    kRRrrrrrrrrrrrrrrRRk
+    .kYyyyyyyyyyyyyyYk..
+    ..kYYYYYYYYYYYYYk...
+  `, `
+    .kkkk.
+    krrrrk
+    kyyyyk
+    kRRRRk
+    .kssk.
+    kssddk
+    kssddk
+    .kkkk.
+  `, `
+    .kkkkk.
+    kbbbbbk
+    kBBBBBk
+    kbbbbbk
+    kBBBBBk
+    .kbbbk.
+    knnnnnk
+    kNNNNNk
+  `);
+
+  // Trainingsanzug: dunkelblau, weisser Reissverschluss und Streifen
+  var JOGGER_T = `
+    ...kkkkkkkkkkkkkk...
+    ..krrrrrrzzrrrrrrk..
+    ..krrrrrrrzrrrrrrk..
+    .krrrrrrrrzrrrrrrrk.
+    .krrrrrrrrzrrrrrrrk.
+    krrrrrrrrrzrrrrrrrrk
+    krrrrrrrrrzrrrrrrrrk
+    kRrrrrrrrrzrrrrrrrRk
+    kRrrrrrrrrzrrrrrrrRk
+    kRRrrrrrrrzrrrrrrRRk
+    .kRRRRRRRRzRRRRRRk..
+    ..kRRRRRRRRRRRRRk...
+  `;
+  var JOGGER_A = `
+    .kkkk.
+    krrzrk
+    krrzrk
+    kRRzRk
+    .kssk.
+    kssddk
+    kssddk
+    .kkkk.
+  `;
+  var JOGGER_L = `
+    .kkkkk.
+    krrrzrk
+    krrrzrk
+    kRRRzRk
+    krrrzrk
+    .krrzk.
+    knnnnnk
+    kNNNNNk
+  `;
+  kostuem('jogger', { r: '#2a3458', R: '#1c2440', z: '#f0f0f0', n: '#f4f4f4', N: '#b0b0b8' },
+          JOGGER_T, JOGGER_A, JOGGER_L);
+
+  // Imker: weisser Anzug, Lederhandschuhe, Gummistiefel. Die Bienen vergessen nichts.
+  kostuem('imker', { r: '#f4f2e8', R: '#d4d0c0', z: '#b8b4a4', s: '#d8b070', d: '#b08848',
+                     n: '#4a6a3a', N: '#2a4a22' }, `
+    ...kkkkkkkkkkkkkk...
+    ..krrrrrrzzrrrrrrk..
+    ..krrrrrrrzrrrrrrk..
+    .krrrrrrrrzrrrrrrrk.
+    .krrRRRrrrzrrrrrrrk.
+    krrrRrRrrrzrrrrrrrrk
+    krrrRRRrrrzrrrrrrrrk
+    kRrrrrrrrrzrrrrrrrRk
+    kRrrrrrrrrzrrrrrrrRk
+    kRRrrrrrrrzrrrrrrRRk
+    .kRRRRRRRRzRRRRRRk..
+    ..kRRRRRRRRRRRRRk...
+  `, `
+    .kkkk.
+    krrrrk
+    krrrrk
+    kRRRRk
+    .kssk.
+    kssddk
+    kssddk
+    .kkkk.
+  `, `
+    .kkkkk.
+    krrrrrk
+    krrrrrk
+    kRRRRRk
+    krrrrrk
+    .knnnk.
+    knnnnnk
+    kNNNNNk
+  `);
+
+  // Trikot: rot mit weissem Brustring, kurze Hose, Stutzen. (Keine
+  // Rueckennummer: nach links gespiegelt stuende da 01.)
+  kostuem('trikot', { r: '#d8202a', R: '#a8141c', y: '#ffffff', Y: '#d8d8e0', b: '#d8202a',
+                      B: '#a8141c', n: '#202028', N: '#101014' }, `
+    ...kkkkkkkkkkkkkk...
+    ..krrrrrryyrrrrrrk..
+    ..krrrrrrrrrrrrrrk..
+    .krrrrrrrrrrrrrrrrk.
+    .kyyyyyyyyyyyyyyyyk.
+    kYyyyyyyyyyyyyyyyyYk
+    krrrrrrrrrrrrrrrrrrk
+    kRrrrrrrrrrrrrrrrrRk
+    kRrrrrrrrrrrrrrrrrRk
+    kRRrrrrrrrrrrrrrrRRk
+    .kRRRRRRRRRRRRRRRk..
+    ..kRRRRRRRRRRRRRk...
+  `, `
+    .kkkk.
+    krrrrk
+    kyyyyk
+    ksssdk
+    .kssk.
+    kssddk
+    kssddk
+    .kkkk.
+  `, `
+    .kkkkk.
+    kyyyyyk
+    kYYYYYk
+    kssssdk
+    kbbbbbk
+    .kbbbk.
+    knnnnnk
+    kNNNNNk
+  `);
+
+  // Hochzeitsanzug: schwarz, weisses Hemd, rote Krawatte
+  kostuem('anzug', { r: '#26262e', R: '#16161c', y: '#f4f4f0', Y: '#d8d8d4', t: '#c81e2a',
+                     b: '#24242c', B: '#16161c', n: '#0c0c10', N: '#2e2e38' }, `
+    ...kkkkkkkkkkkkkk...
+    ..krrrrrryyrrrrrrk..
+    ..krrrrryttyrrrrrk..
+    .krrrrryyttyyrrrrrk.
+    .krrrrryyttyyrrrrrk.
+    krrrrrryyttyyrrrrrrk
+    krrrrrryyttyyrrrrrrk
+    kRrrrrrryttyrrrrrrRk
+    kRrrrrrrryyrrrrrrrRk
+    kRRrrrrrrrrrrrrrrRRk
+    .kRRRRRRRRRRRRRRRk..
+    ..kRRRRRRRRRRRRRk...
+  `, `
+    .kkkk.
+    krrrrk
+    krrrrk
+    kyyyyk
+    .kssk.
+    kssddk
+    kssddk
+    .kkkk.
+  `);
+
+  // Bademantel: rosa und flauschig. Sonntag, 13:40 Uhr.
+  kostuem('bademantel', { r: '#ffb8cc', R: '#e88aa8', n: '#ffffff', N: '#e0d0d8' }, `
+    ...kkkkkkkkkkkkkk...
+    ..krrrrrrsdrrrrrrk..
+    ..krrrrrrsdrrrrrrk..
+    .krrrrrrrRrrrrrrrrk.
+    .krrrrrrrRrrrrrrrrk.
+    krrrrrrrrRrrrrrrrrrk
+    kRRRRRRRRRRRRRRRRRRk
+    krrrrrrrrRrrrrrrrrrk
+    krrrrrrrrRrrrrrrrrrk
+    kRrrrrrrrRrrrrrrrrRk
+    .kRrrrrrrRrrrrrrRk..
+    ..kRRRRRRRRRRRRRk...
+  `, `
+    .kkkk.
+    krrrrk
+    krrrrk
+    kRRRRk
+    .kssk.
+    kssddk
+    kssddk
+    .kkkk.
+  `, `
+    .kkkkk.
+    krrrrrk
+    kRRRRRk
+    kssssdk
+    kssssdk
+    .kssdk.
+    knnnnnk
+    kNNNNNk
+  `);
+
+  // Kostuem-Paket: Sultan, Astronaut, Honigbaer
+  kostuem('sultan', { r: '#7a2aa8', R: '#4e1a72', y: '#ffd257', Y: '#c89a2a', q: '#b8202a',
+                      b: '#f0ece0', B: '#c8c4b4', n: '#ffd257', N: '#c89a2a' }, `
+    ...kkkkkkkkkkkkkk...
+    ..krrrrrryyrrrrrrk..
+    ..krrrrryqqyrrrrrk..
+    .krrrrrryqqyrrrrrrk.
+    .krrrrrryqqyrrrrrrk.
+    krrrrrrryqqyrrrrrrrk
+    kYYYYYYYYYYYYYYYYYYk
+    kRrrrrrryqqyrrrrrrRk
+    kRrrrrrryqqyrrrrrrRk
+    kRRrrrrryqqyrrrrrRRk
+    .kRRRRRRyqqyRRRRRk..
+    ..kRRRRRRRRRRRRRk...
+  `, `
+    .kkkk.
+    krrrrk
+    krrrrk
+    kyyyyk
+    .kssk.
+    kssddk
+    kssddk
+    .kkkk.
+  `);
+
+  kostuem('astronaut', { r: '#f4f4f8', R: '#c4c8d4', z: '#ff8a2a', y: '#8a94a8', q: '#ff3a3a',
+                         v: '#3ad368', t: '#4a8aff', s: '#c4c8d4', d: '#9aa0b0',
+                         b: '#f4f4f8', B: '#c4c8d4', n: '#9aa0b0', N: '#6a7080' }, `
+    ...kkkkkkkkkkkkkk...
+    ..krrrrrrrrrrrrrrk..
+    ..kzzrrrrrrrrrrzzk..
+    .krrrrrrrrrrrrrrrrk.
+    .krrrrkkkkkkkkrrrrk.
+    krrrrrkyqyvytkrrrrrk
+    krrrrrkyyyyyykrrrrrk
+    kRrrrrkkkkkkkkrrrrRk
+    kRrrrrrrrrrrrrrrrrRk
+    kRRrrrrrrrrrrrrrrRRk
+    .kRRRRRRRRRRRRRRRk..
+    ..kRRRRRRRRRRRRRk...
+  `, `
+    .kkkk.
+    krrrrk
+    krrrrk
+    kzzzzk
+    .kssk.
+    kssddk
+    kssddk
+    .kkkk.
+  `);
+
+  // Honigbaer: brauner Pelz, heller Bauch, Tatzen
+  kostuem('baer', { r: '#9a6232', R: '#6e4220', y: '#e8c08a', Y: '#c89a62', s: '#9a6232', d: '#6e4220',
+                    b: '#9a6232', B: '#6e4220', n: '#6e4220', N: '#4a2a14' });
+
+  // Unterstuetzer-Paket: der goldene Trainingsanzug
+  kostuem('gold', { r: '#ffd257', R: '#c8962a', z: '#fff6c8', n: '#ffffff', N: '#d0d0d8' },
+          JOGGER_T, JOGGER_A, JOGGER_L);
+
+  /* --- Huete --- */
+
+  // Cap, verkehrt herum: der Schirm zeigt nach hinten
+  hut('cap', `
+    .......kkkkkk....
+    .....kkcccccccck.
+    ....kccccccccccck
+    kkkkkCcccccccccck
+    kCCCCkkkkkkkkkkkk
+  `, { c: '#d8202a', C: '#a8141c' }, -3, -2);
+
+  // Schlafmuetze: blau-weiss, die Spitze haengt nach hinten
+  hut('schlafmuetze', `
+    ..kkk.............
+    .kwwwk..kkkk......
+    .kwwwkkkbbbbkk....
+    ..kkkbbbbwwbbbkk..
+    .....kwwbbbbwwbbk.
+    ....kbbbbwwbbbbbk.
+    ...kwwwwwwwwwwwwwk
+    ...kkkkkkkkkkkkkkk
+  `, { b: '#4a6ad8', w: '#f4f8ff' }, -4, -5);
+
+  // Fes: rot, flach oben, mit schwarzer Quaste
+  hut('fes', `
+    ...kkkkkk...
+    ..ktttrrrk..
+    .tkrrrrrrk..
+    .tkrrrrrrrk.
+    ttkrrrrrrrk.
+    tkRRRRRRRRRk
+    ..kkkkkkkkk.
+  `, { r: '#c81e2a', R: '#8a1018', t: '#1b1220' }, 1, -5);
+
+  // Kochmuetze: hoch, weiss, gepufft
+  hut('kochmuetze', `
+    ...kkk.kkk...
+    ..kwwwkwwwk..
+    .kwwwwwwwwwk.
+    .kwwwwwwwwwk.
+    ..kwwwwwwwk..
+    ..kWwwwwwwk..
+    ..kWwwwwwwk..
+    .kkkkkkkkkkk.
+    .kWWWWWWWWWk.
+    .kkkkkkkkkkk.
+  `, { w: '#ffffff', W: '#d8dce4' }, 0, -8);
+
+  // Bienen-Antennen: Haarreif mit zwei Kugeln
+  hut('antennen', `
+    .kk......kk..
+    kyyk....kyyk.
+    kyyk....kyyk.
+    .kk.k..k.kk..
+    .....kk......
+    .kkkkkkkkkk..
+    .kbbbbbbbbbk.
+  `, { y: '#ffd257', b: '#1b1220' }, 1, -6);
+
+  // Krone: Gold, ein roter Stein. Koenig der Couch.
+  hut('krone', `
+    .k...k...k.
+    kyk.kyk.kyk
+    kyykyyykyyk
+    kyyyyryyyyk
+    kYYYYYYYYYk
+    kkkkkkkkkkk
+  `, { y: '#ffd257', Y: '#c89a2a', r: '#e8202a' }, 2, -4);
+
+  // Kostuem-Paket: Turban, Raumhelm, Baerenohren
+  hut('turban', `
+    .......kk.....
+    ......kffk....
+    ...kkkkfkkk...
+    ..kwwwwwwwwk..
+    .kwwWwwwwWwwk.
+    kwwwwwrrwwwwwk
+    kWwwwwrrwwwwWk
+    .kkkkkkkkkkkk.
+  `, { w: '#f4f0e8', W: '#d0c8b8', r: '#e8202a', f: '#ffd257' }, 0, -6);
+
+  hut('helm', `
+    .....kkkkkkk......
+    ...kkvvvvvvvkk....
+    ..kvvvvvvvvvvwk...
+    .kvvvvvvvvvvvvwk..
+    .kvvvvvvvvvvvvwk..
+    kvvvvvvvvvvvvvvwk.
+    kvvvvvvvvvvvvvvvk.
+    kvvvvvvvvvvvvvvvk.
+    kvvvvvvvvvvvvvvvk.
+    kvvvvvvvvvvvvvvvk.
+    kvvvvvvvvvvvvvvvk.
+    .kvvvvvvvvvvvvvk..
+    .kkzzzzzzzzzzzkk..
+    ..kkkkkkkkkkkkk...
+  `, { v: '#bfe8ff38', w: '#ffffffd0', z: '#c4c8d4' }, -2, -3);
+
+  hut('baerenohren', `
+    .kkk......kkk.
+    kbbbk....kbbbk
+    kbpbk....kbpbk
+    .kbbk....kbbk.
+  `, { b: '#9a6232', p: '#e8a08a' }, 0, -2);
+
+  // Unterstuetzer-Paket: Heiligenschein. Er schwebt ein Stueck ueber den Locken.
+  hut('heiligenschein', `
+    ...kkkkkkkk...
+    .kkyyyyyyyykk.
+    kyyykkkkkkyyyk
+    .kkyyyyyyyykk.
+    ...kkkkkkkk...
+  `, { y: '#fff09a', k: '#d8a020' }, 0, -8);
+
+  /** Was Yusuf gerade traegt (null = Jeansjacke / ohne Hut). */
+  function setTracht(kostuemId, hutId) {
+    tracht.kostuem = KOSTUEME[kostuemId] ? kostuemId : null;
+    tracht.hut = HUETE[hutId] ? hutId : null;
+  }
+
+  /* ---------------------------------------------------------------
      Figuren-Konfiguration & Posen
      --------------------------------------------------------------- */
 
@@ -2640,7 +3061,9 @@
 
   /**
    * Figur zeichnen. (x, y) = Fußmitte in Weltkoordinaten.
-   * opts: {pose, frame, face, flip, flash, flashAlpha, alpha, scale}
+   * opts: {pose, frame, face, flip, flash, flashAlpha, alpha, scale,
+   *        kostuem, hut}  (nur Yusuf: statt dem, was er gerade traegt —
+   *        die Vorschau im Shop; null = Jeansjacke bzw. ohne Hut)
    */
   function drawChar(ctx, who, x, y, opts) {
     opts = opts || {};
@@ -2648,19 +3071,30 @@
     var frames = POSES[opts.pose || 'idle'] || POSES.idle;
     var p = frames[(opts.frame || 0) % frames.length];
 
+    // Yusuf traegt, was im Shop angezogen ist. Beim Airsoft bleibt die
+    // Weste (die gehoert zur Geschichte), nur der Hut kommt mit.
+    var yu = who === 'yusuf' || who === 'yusuf_as';
+    var kid = who === 'yusuf' ? (opts.kostuem !== undefined ? opts.kostuem : tracht.kostuem) : null;
+    var ko = (kid && KOSTUEME[kid]) || null;
+    var hid = yu ? (opts.hut !== undefined ? opts.hut : tracht.hut) : null;
+    var hu = (hid && HUETE[hid]) || null;
+    var torso = ko ? ko.torso : cfg.torso, arm = ko ? ko.arm : cfg.arm, leg = ko ? ko.leg : cfg.leg;
+
     sctx.clearRect(0, 0, 64, 64);
 
-    var tw = get(cfg.torso).w;
+    var tw = get(torso).w;
     var tx = ORIGIN_X - Math.floor(tw / 2);
     var ty = ORIGIN_Y - cfg.footY + (p.t || 0);
 
-    draw(sctx, cfg.arm, tx + cfg.armBackOX + p.aB[0], ty + cfg.armOY + p.aB[1], false, true);
-    draw(sctx, cfg.leg, tx + cfg.legLOX + p.lL[0], ty + cfg.legOY + p.lL[1], false, true);
-    draw(sctx, cfg.leg, tx + cfg.legROX + p.lR[0], ty + cfg.legOY + p.lR[1], false, false);
-    draw(sctx, cfg.torso, tx, ty, false, false);
+    draw(sctx, arm, tx + cfg.armBackOX + p.aB[0], ty + cfg.armOY + p.aB[1], false, true);
+    draw(sctx, leg, tx + cfg.legLOX + p.lL[0], ty + cfg.legOY + p.lL[1], false, true);
+    draw(sctx, leg, tx + cfg.legROX + p.lR[0], ty + cfg.legOY + p.lR[1], false, false);
+    draw(sctx, torso, tx, ty, false, false);
     var headName = cfg.heads[opts.face || 'normal'] || cfg.heads.normal;
-    draw(sctx, headName, tx + cfg.headOX, ty + cfg.headOY + (p.h || 0), false, false);
-    draw(sctx, cfg.armFront || cfg.arm, tx + cfg.armFrontOX + p.aF[0], ty + cfg.armOY + p.aF[1], false, false);
+    var hx = tx + cfg.headOX, hy = ty + cfg.headOY + (p.h || 0);
+    draw(sctx, headName, hx, hy, false, false);
+    if (hu) draw(sctx, hu.spr, hx + hu.ox, hy + hu.oy, false, false);
+    draw(sctx, ko ? ko.arm : (cfg.armFront || cfg.arm), tx + cfg.armFrontOX + p.aF[0], ty + cfg.armOY + p.aF[1], false, false);
 
     if (opts.flash) {
       sctx.save();
@@ -2683,6 +3117,10 @@
   global.Pixel = {
     art: art, palette: palette, def: def, get: get,
     draw: draw, drawWhite: drawWhite, drawTint: drawTint, drawChar: drawChar,
+    /** Kostuem und Hut fuer Yusuf setzen (Ids aus KOSTUEME / HUETE, sonst nichts). */
+    tracht: setTracht,
+    getragen: function () { return { kostuem: tracht.kostuem, hut: tracht.hut }; },
+    KOSTUEME: KOSTUEME, HUETE: HUETE,
     CHARS: CHARS, POSES: POSES, _sprites: sprites
   };
 
