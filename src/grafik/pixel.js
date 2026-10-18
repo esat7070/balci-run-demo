@@ -2619,35 +2619,38 @@
 
   // Cap, verkehrt herum: der Schirm zeigt nach hinten
   hut('cap', `
-    .......kkkkkk....
-    .....kkcccccccck.
-    ....kccccccccccck
-    kkkkkCcccccccccck
-    kCCCCkkkkkkkkkkkk
-  `, { c: '#d8202a', C: '#a8141c' }, -3, -2);
+    ........kk.......
+    ......kkCCkk.....
+    ....kkcclllcckk..
+    ...kccllccccccck.
+    ...kcccccccccccck
+    kkkkCCcccccccccck
+    kCCCkkkkkkkkkkkkk
+    kkkk.............
+  `, { c: '#d8202a', C: '#a8141c', l: '#ff6a5a' }, -3, -4);
 
   // Schlafmuetze: blau-weiss, die Spitze haengt nach hinten
   hut('schlafmuetze', `
-    ..kkk.............
-    .kwwwk..kkkk......
-    .kwwwkkkbbbbkk....
-    ..kkkbbbbwwbbbkk..
-    .....kwwbbbbwwbbk.
-    ....kbbbbwwbbbbbk.
-    ...kwwwwwwwwwwwwwk
-    ...kkkkkkkkkkkkkkk
-  `, { b: '#4a6ad8', w: '#f4f8ff' }, -4, -5);
+    ...kkk...........
+    ..kwwwk.kkkkk....
+    ..kwwwkkbbbbbkk..
+    ...kkkbbwwwwwbbk.
+    ....kbbbbbbbbbbbk
+    ...kwwwwwwwwwwwwk
+    ...kWWWWWWWWWWWWk
+    ....kkkkkkkkkkkk.
+  `, { b: '#4a6ad8', w: '#f4f8ff', W: '#c8d4e8' }, -3, -5);
 
   // Fes: rot, flach oben, mit schwarzer Quaste
   hut('fes', `
-    ...kkkkkk...
-    ..ktttrrrk..
-    .tkrrrrrrk..
-    .tkrrrrrrrk.
-    ttkrrrrrrrk.
-    tkRRRRRRRRRk
+    ..tkkkkkk...
+    .tkRRRRRRk..
+    .tkrrrrlrk..
+    .tkrrrrlrrk.
+    ttkrrrrrlrk.
+    TTkRRRRRRRRk
     ..kkkkkkkkk.
-  `, { r: '#c81e2a', R: '#8a1018', t: '#1b1220' }, 1, -5);
+  `, { r: '#c81e2a', R: '#8a1018', l: '#ff5a50', t: '#ffd257', T: '#c8962a' }, 1, -6);
 
   // Kochmuetze: hoch, weiss, gepufft
   hut('kochmuetze', `
@@ -2665,24 +2668,29 @@
 
   // Bienen-Antennen: Haarreif mit zwei Kugeln
   hut('antennen', `
-    .kk......kk..
-    kyyk....kyyk.
-    kyyk....kyyk.
-    .kk.k..k.kk..
-    .....kk......
-    .kkkkkkkkkk..
-    .kbbbbbbbbbk.
-  `, { y: '#ffd257', b: '#1b1220' }, 1, -6);
+    .kkk......kkk.
+    kyyYk....kYyyk
+    kyyyk....kyyyk
+    .kkkk....kkkk.
+    ...kk....kk...
+    ....k....k....
+    ....k....k....
+    ...kbybybyk...
+    ..kybybybybk..
+    ..kkkkkkkkkk..
+  `, { y: '#ffd257', Y: '#fff3b0', b: '#1b1220' }, 0, -7);
 
   // Krone: Gold, ein roter Stein. Koenig der Couch.
   hut('krone', `
-    .k...k...k.
+    k....k....k
+    kk..kyk..kk
     kyk.kyk.kyk
-    kyykyyykyyk
-    kyyyyryyyyk
+    kyykylykyyk
+    kyyyyyyyyyk
+    kyryybyyryk
     kYYYYYYYYYk
     kkkkkkkkkkk
-  `, { y: '#ffd257', Y: '#c89a2a', r: '#e8202a' }, 2, -4);
+  `, { y: '#ffd257', Y: '#c89a2a', l: '#fff3b0', r: '#e8202a', b: '#3a8aff' }, 2, -6);
 
   // Kostuem-Paket: Turban, Raumhelm, Baerenohren
   hut('turban', `
@@ -3114,12 +3122,37 @@
     ctx.restore();
   }
 
+  /** Wo Kopf und Hut einer Figur gerade sitzen, relativ zur Fussmitte
+      (wie drawChar sie zeichnet: Pose, Bild, Spiegeln, Groesse). Fuer
+      Lichteffekte, die nicht in die Pixel gehoeren (shop.js: Heiligen-
+      schein, Funkeln). kx/ky = Kopfmitte, oben = Oberkante des Kopfs,
+      hut = { x, y, w, h } des Huts (oder null). */
+  function kopfLage(who, opts) {
+    opts = opts || {};
+    var cfg = CHARS[who];
+    if (!cfg) return null;
+    var frames = POSES[opts.pose || 'idle'] || POSES.idle;
+    var p = frames[(opts.frame || 0) % frames.length];
+    var tx = ORIGIN_X - Math.floor(get(cfg.torso).w / 2), ty = ORIGIN_Y - cfg.footY + (p.t || 0);
+    var hx = tx + cfg.headOX, hy = ty + cfg.headOY + (p.h || 0), kopf = get(cfg.heads.normal);
+    var sc = opts.scale || 1, sp = opts.flip ? -1 : 1;
+    var hid = opts.hut !== undefined ? opts.hut : ((who === 'yusuf' || who === 'yusuf_as') ? tracht.hut : null);
+    var hu = (hid && HUETE[hid]) || null, hs = hu ? get(hu.spr) : null;
+    return {
+      kx: (hx + kopf.w / 2 - ORIGIN_X) * sc * sp, ky: (hy + kopf.h / 2 - ORIGIN_Y) * sc,
+      oben: (hy - ORIGIN_Y) * sc, breite: kopf.w * sc,
+      hut: hu ? { x: (hx + hu.ox + hs.w / 2 - ORIGIN_X) * sc * sp, y: (hy + hu.oy + hs.h / 2 - ORIGIN_Y) * sc,
+                  w: hs.w * sc, h: hs.h * sc } : null
+    };
+  }
+
   global.Pixel = {
     art: art, palette: palette, def: def, get: get,
     draw: draw, drawWhite: drawWhite, drawTint: drawTint, drawChar: drawChar,
     /** Kostuem und Hut fuer Yusuf setzen (Ids aus KOSTUEME / HUETE, sonst nichts). */
     tracht: setTracht,
     getragen: function () { return { kostuem: tracht.kostuem, hut: tracht.hut }; },
+    kopfLage: kopfLage,
     KOSTUEME: KOSTUEME, HUETE: HUETE,
     CHARS: CHARS, POSES: POSES, _sprites: sprites
   };

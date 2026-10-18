@@ -859,6 +859,7 @@
 
   function vorschauTeile(G) {
     var sh = G.shop;
+    staubSchritt(sh);
     var vt = vorschauTracht(G), pz = vorschauPose(sh.t), sp = SPUR[vt.spur];
     if (sp && pz.laeuft && sh.t % sp.takt === 0) {
       var y0 = BUEHNE.y - (pz.luft ? Math.sin(((sh.t % 90) / 90) * Math.PI) * 28 : 0);
@@ -879,17 +880,140 @@
     if (sh.teile.length > 120) sh.teile.splice(0, sh.teile.length - 120);
   }
 
-  /* --- Zeichnen --- */
+  /* --- Zeichnen ---
+     Die Honig-Boutique: hinten Regale voller Honig und Kleidung (klein
+     gemalt und weich vergroessert, also unscharf wie hinter einer Linse),
+     Haengelampen mit Lichtkegeln, Staub im Licht, vorne die Buehne mit
+     Spot. Darueber Glas-Tafeln mit Reitern, Liste und Preisen — die bleiben
+     scharf. Licht, Bloom und Vignette kommen aus licht.js; mit GRAFIK:
+     SPARSAM bleibt es bei Flaechen und Pixeln. */
 
-  function knopf(ctx, r, text, an) {
-    rect(ctx, r.x, r.y, r.w, r.h, an ? 'rgba(92,62,24,0.97)' : 'rgba(38,26,54,0.95)');
-    ctx.strokeStyle = an ? '#ffe9a8' : '#ffc23c';
-    ctx.lineWidth = an ? 2 : 1;
-    ctx.strokeRect(r.x + 0.5, r.y + 0.5, r.w - 1, r.h - 1);
-    F.draw(ctx, text, r.x + r.w / 2, r.y + Math.round(r.h / 2) - 3, { color: an ? '#ffffff' : HELL, align: 'center' });
+  function Li() { var L = global.Licht; return (L && L.glow) ? L : null; }
+  function lichtStufe() { var L = Li(); return (L && L.stufe) ? L.stufe() : 0; }
+
+  function farbeA(hex, a) {
+    var h = hex.replace('#', '');
+    return 'rgba(' + parseInt(h.substr(0, 2), 16) + ',' + parseInt(h.substr(2, 2), 16) + ',' + parseInt(h.substr(4, 2), 16) + ',' + a + ')';
   }
 
+  /** Feste Zufallsfolge (die Kulisse sieht jedes Mal gleich aus). */
+  function folge(seed) {
+    var s = seed >>> 0;
+    return function () { s = (s * 1664525 + 1013904223) >>> 0; return s / 4294967296; };
+  }
+
+  /** Pfad mit runden Ecken. */
+  function rund(ctx, x, y, w, h, r) {
+    r = Math.max(0, Math.min(r, w / 2, h / 2));
+    ctx.beginPath();
+    ctx.moveTo(x + r, y);
+    ctx.lineTo(x + w - r, y); ctx.arcTo(x + w, y, x + w, y + r, r);
+    ctx.lineTo(x + w, y + h - r); ctx.arcTo(x + w, y + h, x + w - r, y + h, r);
+    ctx.lineTo(x + r, y + h); ctx.arcTo(x, y + h, x, y + h - r, r);
+    ctx.lineTo(x, y + r); ctx.arcTo(x, y, x + r, y, r);
+    ctx.closePath();
+  }
+
+  /** Glas-Tafel: dunkel und leicht durchsichtig, feiner warmer Rand, Glanzkante oben. */
+  function glas(ctx, x, y, w, h, o) {
+    o = o || {};
+    var r = o.r === undefined ? 5 : o.r;
+    ctx.save();
+    rund(ctx, x, y, w, h, r);
+    var g = ctx.createLinearGradient(0, y, 0, y + h);
+    g.addColorStop(0, o.oben || 'rgba(46,28,62,0.78)');
+    g.addColorStop(1, o.unten || 'rgba(14,8,22,0.86)');
+    ctx.fillStyle = g;
+    ctx.fill();
+    ctx.lineWidth = 1;
+    ctx.strokeStyle = o.rand || 'rgba(255,214,150,0.28)';
+    rund(ctx, x + 0.5, y + 0.5, w - 1, h - 1, Math.max(0, r - 0.5));
+    ctx.stroke();
+    ctx.fillStyle = 'rgba(255,255,255,' + (o.glanz === undefined ? 0.09 : o.glanz) + ')';
+    ctx.fillRect(x + r, y + 1, w - 2 * r, 1);
+    ctx.restore();
+  }
+
+  /** Pille: Knopf, Preis, Status. an = golden hervorgehoben. */
+  function pille(ctx, x, y, w, h, farbe, an) {
+    ctx.save();
+    rund(ctx, x, y, w, h, h / 2);
+    var g = ctx.createLinearGradient(0, y, 0, y + h);
+    if (an) { g.addColorStop(0, '#ffe39a'); g.addColorStop(1, '#e8962a'); }
+    else { g.addColorStop(0, farbeA(farbe, 0.30)); g.addColorStop(1, farbeA(farbe, 0.12)); }
+    ctx.fillStyle = g;
+    ctx.fill();
+    ctx.lineWidth = 1;
+    ctx.strokeStyle = an ? '#fff3c8' : farbeA(farbe, 0.6);
+    rund(ctx, x + 0.5, y + 0.5, w - 1, h - 1, (h - 1) / 2);
+    ctx.stroke();
+    ctx.fillStyle = an ? 'rgba(255,255,255,0.45)' : 'rgba(255,255,255,0.10)';
+    ctx.fillRect(x + h / 2, y + 1, w - h, 1);
+    ctx.restore();
+  }
+
+  function knopf(ctx, r, text, an) {
+    var L = Li();
+    if (an && L) L.glow(ctx, r.x + r.w / 2, r.y + r.h / 2, r.w * 0.65, '#ffb43c', 0.28);
+    pille(ctx, r.x, r.y, r.w, r.h, '#ffc23c', an);
+    F.draw(ctx, text, r.x + r.w / 2, r.y + Math.round(r.h / 2) - 3, { color: an ? '#3a1a08' : HELL, align: 'center' });
+  }
+
+  /* Symbole fuer die Reiter (einfarbig, werden eingefaerbt) */
+  var SYMBOL = { kostuem: 'shop_s_kostuem', hut: 'shop_s_hut', spur: 'shop_s_spur', pakete: 'shop_s_pakete', auftraege: 'shop_s_auftraege' };
+  P.def('shop_s_kostuem', `
+    xxx...xxx
+    xxxx.xxxx
+    xxxxxxxxx
+    .xxxxxxx.
+    ..xxxxx..
+    ..xxxxx..
+    ..xxxxx..
+  `, { x: '#ffffff' });
+  P.def('shop_s_hut', `
+    ...xxx...
+    ..xxxxx..
+    ..xxxxx..
+    ..xxxxx..
+    .xxxxxxx.
+    xxxxxxxxx
+    .........
+  `, { x: '#ffffff' });
+  P.def('shop_s_spur', `
+    ....x....
+    ....x....
+    ...xxx...
+    xxxxxxxxx
+    ...xxx...
+    ....x....
+    ....x....
+  `, { x: '#ffffff' });
+  P.def('shop_s_pakete', `
+    .xxxxxxx.
+    xxxxxxxxx
+    .xxxxxxx.
+    ..xxxxx..
+    ...xxx...
+    ....x....
+    .........
+  `, { x: '#ffffff' });
+  P.def('shop_s_auftraege', `
+    .xxxxxxx.
+    xxxxxxxxx
+    xx.x.x.xx
+    xxxxxxxxx
+    .xxxxxxx.
+    .xx......
+    .x.......
+  `, { x: '#ffffff' });
+
   function icon(ctx, z, x, y) {
+    // Kleiner dunkler Platz fuer das Bild
+    ctx.save();
+    rund(ctx, x - 2, y - 1, 25, 15, 3);
+    ctx.fillStyle = 'rgba(0,0,0,0.30)';
+    ctx.fill();
+    ctx.restore();
     if (z.k === 'ware') {
       var w = z.ware;
       if (w.art === 'kostuem') {
@@ -903,10 +1027,13 @@
         ctx.scale(f, f);
         P.draw(ctx, h.spr, 0, 0);
         ctx.restore();
+        if (w.id === 'heiligenschein' && Li()) Li().glow(ctx, x + 10, y + 6, 10, '#fff0a0', 0.5);
       } else {
         var farbe = { keine: DUNKEL, honig: '#ffc23c', blasen: '#bfe8ff', herzen: '#ff7aa8', konfetti: null, goldstaub: '#ffe38a' }[w.id];
         for (var i = 0; i < 4; i++) {
-          rect(ctx, x + 2 + i * 5, y + 9 - (i % 2) * 4, 3, 3, farbe || KONFETTI[i]);
+          var c = farbe || KONFETTI[i], px = x + 2 + i * 5, py = y + 9 - (i % 2) * 4;
+          if (w.id !== 'keine' && Li()) Li().glow(ctx, px + 1.5, py + 1.5, 4, c, 0.5);
+          rect(ctx, px, py, 3, 3, c);
         }
       }
     } else if (z.k === 'paket') {
@@ -916,119 +1043,303 @@
     }
   }
 
-  function draw(ctx, G, W, H) {
-    var sh = G.shop;
-    if (!sh) return;
-    var LI = global.Licht;
-    var grd = ctx.createLinearGradient(0, 0, 0, H);
-    grd.addColorStop(0, '#160a24'); grd.addColorStop(1, '#2c1636');
-    ctx.fillStyle = grd; ctx.fillRect(0, 0, W, H);
+  /* ---------- Kulisse ---------- */
 
-    // Alles bis zur Fusszeile im 512 breiten Feld, auf breiten Handys mittig
-    ctx.save();
-    ctx.translate(versatz(W), 0);
-
-    // Kopf: SHOP, Konto, zurueck
-    F.draw(ctx, 'SHOP', 12, 8, { color: GOLD, scale: 3, shadow: true, shadowColor: '#5e2a10' });
-    honigZahl(ctx, '' + st.konto, 100, 12, { color: HELL, scale: 2, shadow: true });
-    F.draw(ctx, 'HONIG', 120 + F.measure('' + st.konto, 2, 1), 17, { color: GRAU });
-    knopf(ctx, zurueckRect(), G.touch ? '< ZURÜCK' : G.hinweis('ESC = ZURÜCK'), false);
-
-    // Reiter
-    for (var ti = 0; ti < TABS.length; ti++) {
-      var r = tabRect(ti), an = ti === sh.tab;
-      rect(ctx, r.x, r.y, r.w, r.h, an ? 'rgba(255,194,60,0.92)' : 'rgba(255,255,255,0.07)');
-      F.draw(ctx, TABS[ti].name, r.x + r.w / 2, r.y + 4, { color: an ? '#2a1438' : LILA, align: 'center' });
+  var kulisseCache = { w: 0, h: 0, c: null };
+  /** Hinten: Holzwand mit Regalen voller Honig und Kleidung. Halbe Aufloesung,
+      weich vergroessert = unscharf. Wird nur neu gemalt, wenn sich die Groesse aendert. */
+  function kulisseBild(W, H) {
+    if (kulisseCache.c && kulisseCache.w === W && kulisseCache.h === H) return kulisseCache.c;
+    var c = document.createElement('canvas');
+    c.width = Math.ceil(W / 2); c.height = Math.ceil(H / 2);
+    var x = c.getContext('2d');
+    x.imageSmoothingEnabled = false;
+    x.setTransform(0.5, 0, 0, 0.5, 0, 0);
+    var g = x.createLinearGradient(0, 0, 0, H);
+    g.addColorStop(0, '#1e1028'); g.addColorStop(0.6, '#2c1830'); g.addColorStop(1, '#3a2016');
+    x.fillStyle = g; x.fillRect(0, 0, W, H);
+    for (var px = 0; px < W; px += 26) {
+      x.fillStyle = 'rgba(0,0,0,0.16)'; x.fillRect(px, 0, 2, H);
+      x.fillStyle = 'rgba(255,220,180,0.04)'; x.fillRect(px + 2, 0, 2, H);
     }
+    var R = folge(1907), KLEID = ['#7ab0e8', '#d8202a', '#2a3458', '#ffb8cc', '#f4f2e8', '#7a2aa8', '#ffd257', '#9a6232'];
+    [92, 146, 200].forEach(function (by) {
+      for (var sx = 6; sx < W - 12;) {
+        var art = R();
+        if (art < 0.5) { P.draw(x, R() < 0.12 ? 'goldhonig' : 'honig', sx, by - 14); sx += 15; }
+        else if (art < 0.78) {
+          for (var l = 0; l < 3; l++) {
+            x.fillStyle = KLEID[(R() * KLEID.length) | 0]; x.fillRect(sx, by - 4 - l * 4, 18, 4);
+            x.fillStyle = 'rgba(0,0,0,0.3)'; x.fillRect(sx, by - 1 - l * 4, 18, 1);
+          }
+          sx += 22;
+        } else sx += 8 + R() * 16;
+      }
+      x.fillStyle = '#5a3a22'; x.fillRect(0, by, W, 5);
+      x.fillStyle = '#80583a'; x.fillRect(0, by, W, 1);
+      x.fillStyle = 'rgba(0,0,0,0.38)'; x.fillRect(0, by + 5, W, 4);
+    });
+    var gb = x.createLinearGradient(0, 214, 0, H);
+    gb.addColorStop(0, '#2c180e'); gb.addColorStop(1, '#120806');
+    x.fillStyle = gb; x.fillRect(0, 214, W, H - 214);
+    x.fillStyle = 'rgba(255,200,140,0.08)'; x.fillRect(0, 214, W, 1);
+    kulisseCache = { w: W, h: H, c: c };
+    return c;
+  }
 
-    // Buehne mit Yusuf
+  /** Haengelampe aus Messing, mit Birne. */
+  function lampe(ctx, x, y, hell, L) {
+    rect(ctx, x, 0, 1, y - 4, '#24160e');
+    rect(ctx, x - 4, y - 5, 9, 2, '#b07a3a');
+    rect(ctx, x - 7, y - 3, 15, 3, '#8a5a2a');
+    rect(ctx, x - 7, y - 3, 15, 1, '#d8a050');
+    rect(ctx, x - 8, y, 17, 1, '#5a3818');
+    rect(ctx, x - 2, y + 1, 5, 2, '#fff3c8');
+    if (L) {
+      L.glow(ctx, x + 0.5, y + 2, 9, '#fff0c0', 0.9 * hell, true);
+      L.glow(ctx, x + 0.5, y + 2, 34, '#ffb46a', 0.32 * hell);
+    }
+  }
+
+  function staubAnlegen(sh) {
+    var R = folge(77);
+    sh.staub = [];
+    for (var i = 0; i < 26; i++) {
+      sh.staub.push({ x: 30 + R() * 132, y: 30 + R() * 170, vx: (R() - 0.5) * 0.08, vy: -0.03 - R() * 0.07, p: R() * 6.28 });
+    }
+  }
+
+  function staubSchritt(sh) {
+    if (!sh.staub) staubAnlegen(sh);
+    for (var i = 0; i < sh.staub.length; i++) {
+      var d = sh.staub[i];
+      d.x += d.vx + Math.sin(sh.t * 0.01 + d.p) * 0.05;
+      d.y += d.vy;
+      if (d.y < 20) { d.y = 200; d.x = 30 + ((d.p * 977) % 132); }
+    }
+  }
+
+  /** Die Buehne: Sockel, Spot, Schatten, Lichtkranz beim Kauf, Yusuf. */
+  function buehne(ctx, G, sh, L, voll, W, H) {
+    var bx = BUEHNE.x, by = BUEHNE.y;
     var vt = vorschauTracht(G), pz = vorschauPose(sh.t);
-    rect(ctx, 12, 54, 172, 182, 'rgba(10,6,16,0.55)');
-    if (LI && LI.glow) LI.glow(ctx, BUEHNE.x, BUEHNE.y - 40, 70, '#ffb43c', 0.18);
-    rect(ctx, 20, BUEHNE.y, 156, 3, '#5a3a22');
-    rect(ctx, 20, BUEHNE.y + 3, 156, 2, '#3a2416');
+    var sprung = pz.luft ? Math.round(Math.sin(((sh.t % 90) / 90) * Math.PI) * 28) : 0;
+    if (L) L.glowOval(ctx, bx, by + 13, 92, 13, '#ffa860', 0.24);
+    // Sockel: Vorderseite (Holz), Oberseite, Goldrand
+    ctx.save();
+    var vg = ctx.createLinearGradient(0, by, 0, by + 12);
+    vg.addColorStop(0, '#7a4a26'); vg.addColorStop(1, '#2a140a');
+    ctx.fillStyle = vg;
+    ctx.beginPath();
+    ctx.moveTo(bx - 62, by); ctx.lineTo(bx - 62, by + 10);
+    ctx.ellipse(bx, by + 10, 62, 8, 0, Math.PI, 0, true);
+    ctx.lineTo(bx + 62, by);
+    ctx.ellipse(bx, by, 62, 8, 0, 0, Math.PI, false);
+    ctx.closePath();
+    ctx.fill();
+    var og = ctx.createRadialGradient(bx, by, 4, bx, by, 62);
+    og.addColorStop(0, '#b8844a'); og.addColorStop(1, '#5a3418');
+    ctx.fillStyle = og;
+    ctx.beginPath(); ctx.ellipse(bx, by, 62, 8, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.strokeStyle = 'rgba(255,214,120,0.85)'; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.ellipse(bx, by, 61.5, 7.5, 0, 0, Math.PI * 2); ctx.stroke();
+    ctx.strokeStyle = 'rgba(255,214,120,0.35)';
+    ctx.beginPath(); ctx.ellipse(bx, by + 10, 61.5, 7.5, 0, 0, Math.PI, false); ctx.stroke();
+    ctx.restore();
+    if (L) L.glowOval(ctx, bx, by, 54, 7, '#ffe2a8', 0.5);
+    // Bloom aus Lampen, Kegeln und Spot einfangen — bevor Yusuf kommt
+    // (sonst leuchtet sein weisser Pulli wie eine Lampe)
+    if (L && voll >= 2) L.bloomFangen(ctx.canvas, W, H, 2);
+    // Lichtkranz beim Kauf
+    if (sh.jubel > 0 && L) {
+      var a = Math.min(1, sh.jubel / 35) * 0.4;
+      ctx.save();
+      ctx.translate(bx, by - 46);
+      ctx.rotate(sh.t * 0.012);
+      ctx.globalCompositeOperation = 'lighter';
+      var rg = ctx.createLinearGradient(0, 0, 0, -120);
+      rg.addColorStop(0, 'rgba(255,232,160,' + a + ')'); rg.addColorStop(1, 'rgba(255,232,160,0)');
+      ctx.fillStyle = rg;
+      for (var i = 0; i < 12; i++) {
+        ctx.rotate(Math.PI / 6);
+        ctx.beginPath(); ctx.moveTo(-2, 0); ctx.lineTo(2, 0); ctx.lineTo(13, -120); ctx.lineTo(-13, -120); ctx.closePath(); ctx.fill();
+      }
+      ctx.restore();
+      L.glow(ctx, bx, by - 46, 60, '#fff0b0', a);
+    }
+    // Staub im Licht des Spots
+    if (L && voll >= 1 && sh.staub) {
+      for (var si = 0; si < sh.staub.length; si++) {
+        var d = sh.staub[si], breite = 7 + (d.y / 210) * 70, nah = 1 - Math.min(1, Math.abs(d.x - bx) / breite);
+        if (nah <= 0) continue;
+        var fl = 0.5 + 0.5 * Math.sin(sh.t * 0.05 + d.p);
+        L.glow(ctx, d.x, d.y, 2.2, '#fff0c8', 0.55 * nah * fl);
+      }
+    }
+    // Spur- und Konfetti-Teilchen
     for (var qi = 0; qi < sh.teile.length; qi++) {
-      var q = sh.teile[qi];
-      ctx.globalAlpha = Math.min(1, q.life / ((q.max || 40) * 0.6));
+      var q = sh.teile[qi], qa = Math.min(1, q.life / ((q.max || 40) * 0.6));
+      ctx.globalAlpha = qa;
+      if (L && q.glanz !== false && (q.col === '#ffc23c' || q.col === '#ffe38a' || q.col === '#bfe8ff' || q.col === '#ff7aa8')) {
+        L.glow(ctx, q.x, q.y, 5, q.col, 0.45);
+      }
       if (q.text) F.draw(ctx, q.text, q.x, q.y, { color: q.col });
       else rect(ctx, q.x - 1, q.y - 1, q.size || 2, q.size || 2, q.col);
       ctx.globalAlpha = 1;
     }
-    var sprung = pz.luft ? Math.round(Math.sin(((sh.t % 90) / 90) * Math.PI) * 28) : 0;
-    P.drawChar(ctx, 'yusuf', BUEHNE.x, BUEHNE.y - sprung, {
-      pose: pz.pose, frame: pz.frame, face: sh.jubel > 0 ? 'laugh' : 'normal', scale: 3,
-      kostuem: vt.kostuem, hut: vt.hut
-    });
+    // Schatten (kleiner, wenn er springt), Rueckenlicht, Yusuf
+    ctx.save();
+    ctx.fillStyle = 'rgba(0,0,0,' + (0.42 - sprung / 120) + ')';
+    ctx.beginPath(); ctx.ellipse(bx, by, 20 - sprung / 4, 3.5, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.restore();
+    if (L) L.glow(ctx, bx, by - 52, 64, '#ff9a4a', 0.10);
+    var o = { pose: pz.pose, frame: pz.frame, face: sh.jubel > 0 ? 'laugh' : 'normal', scale: 3, kostuem: vt.kostuem, hut: vt.hut };
+    P.drawChar(ctx, 'yusuf', bx, by - sprung, o);
+    ctx.save();
+    ctx.translate(bx, by - sprung);
+    licht(ctx, G, o);
+    ctx.restore();
+  }
 
-    // Rechte Seite: die Liste
-    var tab = TABS[sh.tab].k, l = zeilen(G);
-    if (tab === 'auftraege') drawAuftraege(ctx, G, l);
+  function draw(ctx, G, W, H) {
+    var sh = G.shop;
+    if (!sh) return;
+    var L = lichtStufe() >= 1 ? Li() : null, voll = lichtStufe(), ox = versatz(W);
+
+    // Hinten: Wand, Regale (unscharf), etwas abgedunkelt
+    ctx.save();
+    ctx.imageSmoothingEnabled = true;
+    ctx.drawImage(kulisseBild(W, H), 0, 0, W, H);
+    ctx.restore();
+    rect(ctx, 0, 0, W, H, 'rgba(14,7,20,0.42)');
+    if (L) L.strahlen(ctx, W, H, { n: 3, col: '#ffcf9a', a: 0.045, winkel: 0.38, breite: 28, t: G.tick, x0: -W * 0.45, laenge: 0.95 });
+
+    ctx.save();
+    ctx.translate(ox, 0);
+    // Zwei Lampen: der Spot ueber der Buehne, eine ueber der Liste
+    var flacker = 0.92 + 0.08 * Math.sin(G.tick * 0.11) * Math.sin(G.tick * 0.037);
+    // (die Buehnenlampe haengt unter den Reitern, ihr Kabel verschwindet dahinter)
+    if (L) L.kegel(ctx, BUEHNE.x, 58, 12, BUEHNE.x, BUEHNE.y + 4, 140, '#ffd9a0', 0.19 * flacker);
+    if (L) L.kegel(ctx, 346, 14, 10, 346, 236, 210, '#ffd9a0', 0.05);
+    lampe(ctx, BUEHNE.x, 55, flacker, L);
+    lampe(ctx, 346, 12, 0.8, L);
+    buehne(ctx, G, sh, L, voll, W, H);
+    ctx.restore();
+    if (L && voll >= 2) L.bloomZeichnen(ctx, W, H, 0.6);
+    if (L) L.vignette(ctx, W, H, 0.5);
+
+    // Vorne, scharf: Kopf, Reiter, Liste
+    ctx.save();
+    ctx.translate(ox, 0);
+    if (L) L.glow(ctx, 45, 19, 44, '#ffb43c', 0.30);
+    F.draw(ctx, 'SHOP', 12, 8, { color: GOLD, scale: 3, shadow: true, shadowColor: '#5e2a10' });
+    var kt = '' + st.konto, kw = F.measure(kt, 2, 1);
+    glas(ctx, 96, 6, kw + 66, 21, { r: 10, rand: 'rgba(255,200,90,0.45)' });
+    if (L) L.glow(ctx, 111, 16, 13, '#ffc23c', 0.45);
+    ctx.save(); ctx.translate(104, 9); ctx.scale(2, 2); P.draw(ctx, 'honig_mini', 0, 0); ctx.restore();
+    F.draw(ctx, kt, 122, 10, { color: HELL, scale: 2, shadow: true });
+    F.draw(ctx, 'HONIG', 126 + kw, 15, { color: GRAU });
+    knopf(ctx, zurueckRect(), G.touch ? '< ZURÜCK' : G.hinweis('ESC = ZURÜCK'), false);
+
+    for (var ti = 0; ti < TABS.length; ti++) {
+      var r = tabRect(ti), an = ti === sh.tab;
+      if (an && L) L.glowOval(ctx, r.x + r.w / 2, r.y + r.h, r.w * 0.6, 7, '#ffb43c', 0.4);
+      if (an) pille(ctx, r.x, r.y, r.w, r.h, '#ffc23c', true);
+      else glas(ctx, r.x, r.y, r.w, r.h, { r: 7, glanz: 0.06 });
+      var tw = F.measure(TABS[ti].name, 1, 1), tx0 = Math.round(r.x + (r.w - tw - 13) / 2);
+      P.drawTint(ctx, SYMBOL[TABS[ti].k], tx0, r.y + 4, an ? '#5a2a08' : '#a898c0');
+      F.draw(ctx, TABS[ti].name, tx0 + 13, r.y + 4, { color: an ? '#3a1a08' : LILA });
+    }
+
+    glas(ctx, LISTE.x - 6, LISTE.y - 6, LISTE.w + 12, 190, { r: 7 });
+    var tab = TABS[Math.min(sh.tab, TABS.length - 1)].k, l = zeilen(G);
+    if (tab === 'auftraege') drawAuftraege(ctx, G, l, L);
     else {
-      for (var i = 0; i < l.length; i++) {
-        var z = l[i], zr = zeileRect(G, i), sel = i === sh.sel[sh.tab];
-        if (sel) {
-          rect(ctx, zr.x - 4, zr.y - 1, zr.w + 8, zr.h + 2, 'rgba(255,210,87,0.14)');
-          if ((G.tick >> 4) % 2 === 0) F.draw(ctx, '|', zr.x - 10, zr.y + 4, { color: GOLD });
-        }
-        icon(ctx, z, zr.x, zr.y);
-        var name = '', rechts = null, rcol = GRAU, glas = false;
-        if (z.k === 'ware') {
-          var w = z.ware, gehoert = besitzt(w);
-          name = w.name;
-          if (gehoert && getragen(w.art) === w.id) { rechts = 'AN'; rcol = GRUEN; }
-          else if (gehoert) { rechts = 'IM SCHRANK'; rcol = GRAU; }
-          else if (w.paket) { rechts = PAKETE[w.paket].name; rcol = BLAU; }
-          else { rechts = '' + w.preis; rcol = st.konto >= w.preis ? GOLD : '#8a6a5a'; glas = true; }
-          F.draw(ctx, name, zr.x + 26, zr.y + 4, { color: sel ? '#ffffff' : (gehoert ? LILA : '#a898c0') });
-        } else if (z.k === 'paket') {
-          name = PAKETE[z.paket].name;
-          if (premium[z.paket]) { rechts = 'GEKAUFT'; rcol = GRUEN; }
-          else if (!store()) { rechts = '-'; rcol = DUNKEL; }
-          else { rechts = angebote[z.paket] || (store().plattform === 'steam' ? 'IM STEAM-SHOP' : '...'); rcol = BLAU; }
-          F.draw(ctx, name, zr.x + 26, zr.y + 4, { color: sel ? '#ffffff' : LILA });
-        } else {
-          F.draw(ctx, 'KÄUFE WIEDERHERSTELLEN', zr.x + 26, zr.y + 4, { color: sel ? '#ffffff' : GRAU });
-        }
-        if (rechts && glas) honigZahl(ctx, rechts, zr.x + zr.w, zr.y + 4, { color: rcol, align: 'right' });
-        else if (rechts) F.draw(ctx, rechts, zr.x + zr.w, zr.y + 4, { color: rcol, align: 'right' });
-      }
-      if (tab === 'pakete') drawPaketInfo(ctx, G, l);
+      for (var i = 0; i < l.length; i++) zeileZeichnen(ctx, G, l[i], zeileRect(G, i), i === sh.sel[sh.tab], L);
+      if (tab === 'pakete') drawPaketInfo(ctx, G, l, L);
     }
     ctx.restore();
 
-    // Unten: Beschreibung, was die Taste tut, Meldungen
-    rect(ctx, 0, 242, W, H - 242, 'rgba(10,6,16,0.82)');
-    rect(ctx, 0, 242, W, 1, 'rgba(255,194,60,0.5)');
+    // Unten: Glasleiste mit Beschreibung, was die Taste tut, Meldungen
+    glas(ctx, -2, 242, W + 4, H - 240, { r: 0, oben: 'rgba(30,18,42,0.88)', unten: 'rgba(10,6,16,0.94)', rand: 'rgba(255,194,60,0.45)' });
+    if (L) L.glowOval(ctx, W / 2, 242, W * 0.4, 3, '#ffb43c', 0.25);
     var fuss = fussText(G, l[sh.sel[sh.tab]]);
-    if (fuss[0]) F.draw(ctx, fuss[0], W / 2, 250, { color: LILA, align: 'center' });
+    if (fuss[0]) F.draw(ctx, fuss[0], W / 2, 251, { color: LILA, align: 'center' });
     var unten = sh.meldung ? sh.meldung.text : fuss[1];
-    if (unten) F.draw(ctx, unten, W / 2, 266, { color: sh.meldung ? sh.meldung.col : GOLD, align: 'center' });
+    if (unten) F.draw(ctx, unten, W / 2, 267, { color: sh.meldung ? sh.meldung.col : GOLD, align: 'center', shadow: !!sh.meldung });
 
-    if (sh.dialog) drawDialogBox(ctx, G, W, H);
-    if (sh.kauf) drawKauf(ctx, G, W, H);
+    if (sh.dialog) drawDialogBox(ctx, G, W, H, L);
+    if (sh.kauf) drawKauf(ctx, G, W, H, L);
   }
 
-  function drawPaketInfo(ctx, G, l) {
-    var z = l[G.shop.sel[G.shop.tab]];
-    var y = LISTE.y + 3 * LISTE.zeile + 10;
-    rect(ctx, LISTE.x - 4, y - 6, LISTE.w + 8, 1, 'rgba(255,255,255,0.12)');
-    if (z && z.k === 'paket') {
-      var pk = PAKETE[z.paket];
-      F.draw(ctx, 'DRIN:', LISTE.x, y, { color: GRAU });
-      F.draw(ctx, pk.zeilen[0], LISTE.x, y + 12, { color: HELL });
-      F.draw(ctx, pk.zeilen[1], LISTE.x, y + 24, { color: HELL });
+  /** Eine Zeile der Liste: Platz mit Bild, Name, rechts Preis oder Status. */
+  function zeileZeichnen(ctx, G, z, zr, sel, L) {
+    var sh = G.shop;
+    if (sel) {
+      ctx.save();
+      rund(ctx, zr.x - 4, zr.y - 2, zr.w + 8, zr.h + 3, 4);
+      var hg = ctx.createLinearGradient(zr.x, 0, zr.x + zr.w, 0);
+      hg.addColorStop(0, 'rgba(255,196,90,0.30)'); hg.addColorStop(1, 'rgba(255,196,90,0.05)');
+      ctx.fillStyle = hg; ctx.fill();
+      // Glanz, der ueber die Zeile wandert
+      ctx.clip();
+      var gx = zr.x - 60 + ((sh.t * 4) % (zr.w + 220));
+      var sg = ctx.createLinearGradient(gx, 0, gx + 40, 0);
+      sg.addColorStop(0, 'rgba(255,255,255,0)'); sg.addColorStop(0.5, 'rgba(255,255,255,0.16)'); sg.addColorStop(1, 'rgba(255,255,255,0)');
+      ctx.fillStyle = sg; ctx.fillRect(gx, zr.y - 2, 40, zr.h + 3);
+      ctx.restore();
+      rect(ctx, zr.x - 4, zr.y - 1, 2, zr.h + 1, GOLD);
+      if (L) L.glow(ctx, zr.x - 3, zr.y + 6, 12, '#ffb43c', 0.45);
     }
-    var zeilenInfo;
-    var s = store();
+    icon(ctx, z, zr.x, zr.y);
+    var tx = zr.x + 28, ty = zr.y + 4;
+    if (z.k === 'ware') {
+      var w = z.ware, gehoert = besitzt(w);
+      F.draw(ctx, w.name, tx, ty, { color: sel ? '#ffffff' : (gehoert ? LILA : '#a898c0') });
+      if (gehoert && getragen(w.art) === w.id) status(ctx, zr, 'AN', GRUEN, '#d8ffc0', L);
+      else if (gehoert) F.draw(ctx, 'IM SCHRANK', zr.x + zr.w, ty, { color: MATT, align: 'right' });
+      else if (w.paket) status(ctx, zr, PAKETE[w.paket].name, BLAU, '#d8f4ff', null);
+      else honigZahl(ctx, '' + w.preis, zr.x + zr.w, ty, { color: st.konto >= w.preis ? GOLD : '#8a6a5a', align: 'right' });
+    } else if (z.k === 'paket') {
+      F.draw(ctx, PAKETE[z.paket].name, tx, ty, { color: sel ? '#ffffff' : LILA });
+      if (premium[z.paket]) status(ctx, zr, 'GEKAUFT', GRUEN, '#d8ffc0', L);
+      else if (!store()) F.draw(ctx, '-', zr.x + zr.w, ty, { color: DUNKEL, align: 'right' });
+      else status(ctx, zr, angebote[z.paket] || (store().plattform === 'steam' ? 'IM STEAM-SHOP' : '...'), BLAU, '#ffffff', L);
+    } else {
+      F.draw(ctx, 'KÄUFE WIEDERHERSTELLEN', tx, ty, { color: sel ? '#ffffff' : GRAU });
+    }
+  }
+
+  /** Status rechts in einer Pille (AN, GEKAUFT, Paketname, Preis). */
+  function status(ctx, zr, text, farbe, schrift, L) {
+    var w = F.measure(text, 1, 1) + 12, x = zr.x + zr.w - w;
+    if (L) L.glow(ctx, x + w / 2, zr.y + 6, w * 0.5, farbe, 0.18);
+    pille(ctx, x, zr.y, w, 13, farbe, false);
+    F.draw(ctx, text, x + 6, zr.y + 3, { color: schrift });
+  }
+
+  function drawPaketInfo(ctx, G, l, L) {
+    var z = l[G.shop.sel[G.shop.tab]];
+    var y = LISTE.y + 3 * LISTE.zeile + 8;
+    if (z && z.k === 'paket') {
+      var pk = PAKETE[z.paket], gold = z.paket === 'unterstuetzer';
+      if (L) L.glow(ctx, LISTE.x + LISTE.w / 2, y + 20, 120, gold ? '#ffc23c' : '#6fc8e8', 0.10);
+      glas(ctx, LISTE.x - 2, y - 4, LISTE.w + 4, 40, { r: 5, rand: gold ? 'rgba(255,210,90,0.55)' : 'rgba(111,200,232,0.55)',
+                                                     oben: 'rgba(40,30,70,0.7)', unten: 'rgba(20,14,40,0.8)' });
+      F.draw(ctx, 'DRIN:', LISTE.x + 4, y + 2, { color: GRAU });
+      F.draw(ctx, pk.zeilen[0], LISTE.x + 4, y + 13, { color: HELL });
+      F.draw(ctx, pk.zeilen[1], LISTE.x + 4, y + 24, { color: HELL });
+    }
+    var zeilenInfo, s = store();
     if (!s) zeilenInfo = ['NUR AUSSEHEN, KEIN VORTEIL IM SPIEL.', 'KAUFEN GEHT IN DER STEAM-, ANDROID- UND', 'IPHONE-VERSION.'];
     else zeilenInfo = ['NUR AUSSEHEN, KEIN VORTEIL IM SPIEL.', 'BEZAHLT WIRD ' + pf('ueber') + '.', 'DAS SPIEL SIEHT KEINE ZAHLUNGSDATEN.'];
-    for (var i = 0; i < zeilenInfo.length; i++) F.draw(ctx, zeilenInfo[i], LISTE.x, y + 48 + i * 12, { color: MATT });
-    if (s && storeStand === 'fehler') F.draw(ctx, 'KEINE VERBINDUNG ' + pf('zu') + '.', LISTE.x, y + 96, { color: ROT });
+    for (var i = 0; i < zeilenInfo.length; i++) F.draw(ctx, zeilenInfo[i], LISTE.x + 4, y + 48 + i * 12, { color: MATT });
+    if (s && storeStand === 'fehler') F.draw(ctx, 'KEINE VERBINDUNG ' + pf('zu') + '.', LISTE.x + 4, y + 96, { color: ROT });
   }
 
-  function drawAuftraege(ctx, G, l) {
+  function drawAuftraege(ctx, G, l, L) {
     var sh = G.shop;
-    F.draw(ctx, 'AUS DER GRUPPE JUNGS. ERLEDIGT: ' + st.erledigt, LISTE.x, LISTE.y - 6, { color: DUNKEL });
+    F.draw(ctx, 'AUS DER GRUPPE JUNGS. ERLEDIGT: ' + st.erledigt, LISTE.x, LISTE.y - 3, { color: DUNKEL });
     if (!l.length) {
       F.draw(ctx, 'GERADE KEINE AUFTRÄGE.', LISTE.x, LISTE.y + 20, { color: GRAU });
       return;
@@ -1036,17 +1347,28 @@
     for (var i = 0; i < l.length; i++) {
       var a = st.auftraege[l[i].i], r = zeileRect(G, i), sel = i === sh.sel[sh.tab];
       var j = JUNGS[a.wer];
-      rect(ctx, r.x - 4, r.y + 2, r.w + 8, r.h - 2, sel ? 'rgba(255,210,87,0.14)' : 'rgba(255,255,255,0.05)');
-      if (sel && (G.tick >> 4) % 2 === 0) F.draw(ctx, '|', r.x - 10, r.y + 18, { color: GOLD });
-      F.draw(ctx, j.wer + ':', r.x, r.y + 7, { color: GOLD });
-      F.draw(ctx, j.sagt[a.satz] || '', r.x + F.measure(j.wer + ': ', 1, 1), r.y + 7, { color: MATT });
-      F.draw(ctx, auftragText(a), r.x, r.y + 19, { color: '#ffffff' });
-      // Fortschritt
-      var bw = 200, anteil = Math.min(1, a.stand / a.ziel);
-      rect(ctx, r.x, r.y + 33, bw, 6, '#2a2436');
-      rect(ctx, r.x, r.y + 33, Math.round(bw * anteil), 6, GRUEN);
-      F.draw(ctx, a.stand + '/' + a.ziel, r.x + bw + 8, r.y + 32, { color: LILA });
-      honigZahl(ctx, '+' + lohn(a), r.x + r.w, r.y + 32, { color: GOLD, align: 'right' });
+      if (sel && L) L.glow(ctx, r.x - 2, r.y + 26, 18, '#ffb43c', 0.35);
+      glas(ctx, r.x - 4, r.y + 6, r.w + 8, r.h - 4, { r: 5, glanz: 0.06,
+           oben: sel ? 'rgba(92,62,40,0.6)' : 'rgba(40,24,56,0.55)', unten: sel ? 'rgba(46,28,22,0.7)' : 'rgba(18,10,28,0.65)',
+           rand: sel ? 'rgba(255,210,120,0.6)' : 'rgba(255,214,150,0.18)' });
+      if (sel) rect(ctx, r.x - 4, r.y + 10, 2, r.h - 12, GOLD);
+      F.draw(ctx, j.wer + ':', r.x + 2, r.y + 11, { color: GOLD });
+      F.draw(ctx, j.sagt[a.satz] || '', r.x + 2 + F.measure(j.wer + ': ', 1, 1), r.y + 11, { color: MATT });
+      F.draw(ctx, auftragText(a), r.x + 2, r.y + 23, { color: '#ffffff' });
+      // Fortschritt: runder Balken, die Spitze leuchtet
+      var bw = 196, anteil = Math.min(1, a.stand / a.ziel), bx = r.x + 2, by = r.y + 36;
+      ctx.save();
+      rund(ctx, bx, by, bw, 6, 3); ctx.fillStyle = 'rgba(0,0,0,0.45)'; ctx.fill();
+      if (anteil > 0) {
+        rund(ctx, bx, by, Math.max(6, bw * anteil), 6, 3);
+        var fg = ctx.createLinearGradient(0, by, 0, by + 6);
+        fg.addColorStop(0, '#b8f08a'); fg.addColorStop(1, '#5aa83a');
+        ctx.fillStyle = fg; ctx.fill();
+      }
+      ctx.restore();
+      if (anteil > 0 && L) L.glow(ctx, bx + bw * anteil, by + 3, 7, '#c8ff6a', 0.5);
+      F.draw(ctx, a.stand + '/' + a.ziel, bx + bw + 8, by - 1, { color: LILA });
+      honigZahl(ctx, '+' + lohn(a), r.x + r.w - 2, by - 1, { color: GOLD, align: 'right' });
     }
   }
 
@@ -1071,17 +1393,16 @@
     return ['', ''];
   }
 
-  function drawDialogBox(ctx, G, W, H) {
-    var d = G.shop.dialog;
-    rect(ctx, 0, 0, W, H, 'rgba(8,5,12,0.6)');
+  function drawDialogBox(ctx, G, W, H, L) {
+    var d = G.shop.dialog, geld = d.art === 'geld', farbe = geld ? BLAU : '#ffc23c';
+    rect(ctx, 0, 0, W, H, 'rgba(6,3,10,0.62)');
     var bx = W / 2 - 150, by = 92;
-    rect(ctx, bx, by, 300, 112, 'rgba(22,12,34,0.98)');
-    ctx.strokeStyle = d.art === 'geld' ? BLAU : '#ffc23c'; ctx.lineWidth = 2;
-    ctx.strokeRect(bx + 1, by + 1, 298, 110);
+    if (L) L.glow(ctx, W / 2, by + 56, 170, farbe, 0.16);
+    glas(ctx, bx, by, 300, 112, { r: 8, rand: farbeA(farbe, 0.8), oben: 'rgba(48,30,70,0.96)', unten: 'rgba(18,10,30,0.98)' });
     var z1, z2, z3;
     if (d.art === 'honig') {
       z1 = d.ware.name + ' KAUFEN?'; z2 = 'FÜR ' + d.ware.preis + ' HONIG.'; z3 = 'DANACH BLEIBEN ' + (st.konto - d.ware.preis) + '.';
-    } else if (d.art === 'geld') {
+    } else if (geld) {
       z1 = PAKETE[d.paket].name + ' KAUFEN?';
       z2 = 'MIT ECHTEM GELD' + (angebote[d.paket] ? ': ' + angebote[d.paket] : '') + '.';
       z3 = 'BEZAHLT WIRD ' + pf('ueber') + '.';
@@ -1089,7 +1410,7 @@
       var a = st.auftraege[d.i];
       z1 = 'AUFTRAG ABLEHNEN?'; z2 = a ? auftragText(a) : ''; z3 = 'DAFÜR KOMMT EIN NEUER.';
     }
-    F.draw(ctx, z1, W / 2, by + 14, { color: d.art === 'geld' ? BLAU : GOLD, align: 'center' });
+    F.draw(ctx, z1, W / 2, by + 14, { color: farbe, align: 'center', shadow: true });
     F.draw(ctx, z2, W / 2, by + 32, { color: '#ffffff', align: 'center' });
     F.draw(ctx, z3, W / 2, by + 46, { color: GRAU, align: 'center' });
     var kb = dialogKnoepfe(W);
@@ -1097,31 +1418,113 @@
     knopf(ctx, kb[1], 'NEIN', !G.touch && !d.ja);
   }
 
-  function drawKauf(ctx, G, W, H) {
+  function drawKauf(ctx, G, W, H, L) {
     var k = G.shop.kauf;
-    rect(ctx, 0, 0, W, H, 'rgba(8,5,12,0.7)');
+    rect(ctx, 0, 0, W, H, 'rgba(6,3,10,0.7)');
     var bx = W / 2 - 160, by = 96;
-    rect(ctx, bx, by, 320, 112, 'rgba(22,12,34,0.98)');
-    ctx.strokeStyle = BLAU; ctx.lineWidth = 2;
-    ctx.strokeRect(bx + 1, by + 1, 318, 110);
-    var punkte = '...'.slice(0, 1 + ((G.tick >> 4) % 3));
+    if (L) L.glow(ctx, W / 2, by + 56, 180, BLAU, 0.16);
+    glas(ctx, bx, by, 320, 112, { r: 8, rand: farbeA(BLAU, 0.8), oben: 'rgba(30,36,70,0.96)', unten: 'rgba(12,12,30,0.98)' });
     var z1, z2;
     if (k.stand === 'offen') {
-      z1 = 'DER STEAM-SHOP IST OFFEN.'; z2 = 'NACH DEM KAUF GEHT ES HIER VON SELBST WEITER' + punkte;
+      z1 = 'DER STEAM-SHOP IST OFFEN.'; z2 = 'NACH DEM KAUF GEHT ES HIER VON SELBST WEITER.';
     } else if (k.stand === 'wieder') {
-      z1 = 'KÄUFE WERDEN WIEDERHERGESTELLT' + punkte; z2 = 'DAS DAUERT EINEN MOMENT.';
+      z1 = 'KÄUFE WERDEN WIEDERHERGESTELLT'; z2 = 'DAS DAUERT EINEN MOMENT.';
     } else if (k.stand === 'pruefen') {
-      z1 = 'KAUF WIRD BESTÄTIGT' + punkte; z2 = 'DIE ZAHLUNG WIRD GEPRÜFT.';
+      z1 = 'KAUF WIRD BESTÄTIGT'; z2 = 'DIE ZAHLUNG WIRD GEPRÜFT.';
     } else {
-      z1 = 'KAUF LÄUFT' + punkte; z2 = 'BITTE IM KAUF-FENSTER ' + pf('von') + ' WEITERMACHEN.';
+      z1 = 'KAUF LÄUFT'; z2 = 'BITTE IM KAUF-FENSTER ' + pf('von') + ' WEITERMACHEN.';
     }
-    F.draw(ctx, z1, W / 2, by + 22, { color: BLAU, align: 'center' });
-    F.draw(ctx, z2, W / 2, by + 40, { color: '#ffffff', align: 'center' });
+    F.draw(ctx, z1, W / 2, by + 16, { color: BLAU, align: 'center', shadow: true });
+    F.draw(ctx, z2, W / 2, by + 32, { color: '#ffffff', align: 'center' });
+    // Warte-Kreis: acht Punkte, einer leuchtet und wandert
+    var cx = W / 2, cy = by + (k.stand === 'offen' ? 58 : 72), n = (G.tick >> 3) % 8;
+    for (var i = 0; i < 8; i++) {
+      var w = i / 8 * Math.PI * 2, px = cx + Math.cos(w) * 9, py = cy + Math.sin(w) * 9;
+      var hell = ((i - n + 8) % 8) / 8;
+      if (L && hell > 0.8) L.glow(ctx, px, py, 5, '#8ae0ff', 0.6);
+      rect(ctx, px - 1, py - 1, 2, 2, farbeA('#8ae0ff', 0.25 + 0.75 * hell));
+    }
     if (k.stand === 'offen') {
       var kb = kaufKnoepfe(W);
       knopf(ctx, kb[0], 'NOCHMAL ÖFFNEN', !G.touch && !k.knopf);
       knopf(ctx, kb[1], 'FERTIG', !G.touch && k.knopf === 1);
     }
+  }
+
+  /* ---------- Licht an dem, was Yusuf traegt ----------
+     Pixel bleiben Pixel; was leuchten oder funkeln soll, kommt hier
+     darueber: Heiligenschein, Krone, Turban, Raumhelm, Gold-Jogger,
+     Sultan. ctx steht schon an Yusufs Fussmitte, o wie bei drawChar
+     (pose, frame, flip, scale, kostuem, hut). Im Spiel aus game.js
+     drawPlayer, im Titel, nach dem Level und auf der Buehne im Shop. */
+
+  /** Ein Funkeln: kleiner Stern, der auf- und wieder zugeht. */
+  function stern(ctx, x, y, gr, col, L) {
+    if (gr <= 0.2) return;
+    if (L) L.glow(ctx, x, y, gr * 3.2, col, 0.55);
+    var d = Math.max(0.5, gr * 0.28);
+    ctx.fillStyle = col;
+    ctx.fillRect(x - gr, y - d / 2, gr * 2, d);
+    ctx.fillRect(x - d / 2, y - gr, d, gr * 2);
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(x - d / 2, y - d / 2, d, d);
+  }
+
+  /** Alle periode Ticks ein Funkeln an einer (festen, aber wechselnden) Stelle in box. */
+  function funkeln(ctx, box, t, periode, versatz, col, gross, L) {
+    if (!box) return;
+    var ph = (t + versatz) % periode, n = Math.floor((t + versatz) / periode);
+    if (ph > 20) return;
+    var R = folge(n * 7919 + versatz);
+    var x = box.x + (R() - 0.5) * box.w * 0.8, y = box.y + (R() - 0.5) * box.h * 0.8;
+    stern(ctx, x, y, Math.sin(ph / 20 * Math.PI) * gross, col, L);
+  }
+
+  function licht(ctx, G, o) {
+    o = o || {};
+    if (lichtStufe() < 1 || !P.kopfLage) return;
+    var L = Li();
+    var kid = o.kostuem !== undefined ? o.kostuem : P.getragen().kostuem;
+    var hid = o.hut !== undefined ? o.hut : P.getragen().hut;
+    if (!kid && !hid) return;
+    var lage = P.kopfLage('yusuf', { pose: o.pose, frame: o.frame, flip: o.flip, scale: o.scale, hut: hid });
+    if (!lage) return;
+    var t = G.tick || 0, sc = o.scale || 1, hu = lage.hut;
+    ctx.save();
+    if (hid === 'heiligenschein' && hu) {
+      var puls = 0.8 + 0.2 * Math.sin(t * 0.07);
+      L.glowOval(ctx, hu.x, hu.y, hu.w * 0.95, hu.h * 1.6, '#fff0a0', 0.6 * puls);
+      L.glow(ctx, hu.x, hu.y, hu.w * 0.75, '#ffd257', 0.30 * puls);
+      funkeln(ctx, hu, t, 50, 11, '#fffbe0', 2.2 * sc, L);
+    }
+    if (hid === 'krone' && hu) {
+      L.glow(ctx, hu.x, hu.y, hu.w * 0.9, '#ffd257', 0.16);
+      funkeln(ctx, hu, t, 38, 0, '#fff3b0', 2.4 * sc, L);
+    }
+    if (hid === 'turban' && hu) funkeln(ctx, hu, t, 56, 23, '#ffd0e0', 2 * sc, L);
+    if (hid === 'helm' && hu) {
+      // Glas: ein heller Streifen oben links, ganz leichter Schimmer
+      L.glow(ctx, hu.x, hu.y, hu.w * 0.7, '#bfe8ff', 0.10);
+      var sp = o.flip ? -1 : 1;
+      ctx.globalAlpha = 0.55;
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(hu.x - sp * hu.w * 0.28, hu.y - hu.h * 0.3, sc, hu.h * 0.22);
+      ctx.fillRect(hu.x - sp * hu.w * 0.22, hu.y - hu.h * 0.38, sc, sc);
+      ctx.globalAlpha = 1;
+    }
+    var koerper = { x: 0, y: lage.oben * 0.4, w: lage.breite * 1.4, h: -lage.oben * 0.9 };
+    if (kid === 'gold') {
+      L.glow(ctx, 0, lage.oben * 0.45, -lage.oben * 0.85, '#ffd257', 0.14);
+      funkeln(ctx, koerper, t, 26, 5, '#fff3b0', 2.2 * sc, L);
+      funkeln(ctx, koerper, t, 34, 19, '#ffffff', 1.8 * sc, L);
+    }
+    if (kid === 'sultan') funkeln(ctx, koerper, t, 44, 9, '#ffe9a8', 1.8 * sc, L);
+    if (kid === 'astronaut') {
+      // Die Lampen auf dem Brustpanel blinken
+      var an = ((t >> 4) % 3);
+      L.glow(ctx, (an - 1) * 2 * sc * (o.flip ? -1 : 1), lage.oben * 0.45, 3 * sc, ['#ff3a3a', '#3ad368', '#4a8aff'][an], 0.6);
+    }
+    ctx.restore();
   }
 
   /* ================= Ergebnis-Bildschirm und Pause ================= */
@@ -1143,6 +1546,8 @@
     var hk = G.honigKonto;
     if (!hk) return;
     // Zaehlt bis zum echten Stand hoch (da sind erledigte Auftraege schon drin)
+    var L = lichtStufe() >= 1 ? Li() : null;
+    if (L) L.glow(ctx, x + 46 + F.measure('' + st.konto, 1, 1) + 6, y + 3, 9, '#ffc23c', 0.5);
     F.draw(ctx, 'KONTO:', x, y, { color: GRAU });
     honigZahl(ctx, '' + Math.max(0, st.konto - hk.summe + gezeigt(hk, timer)), x + 42, y, { color: GOLD });
     var nz = naechstesZiel();
@@ -1162,7 +1567,7 @@
   function drawPause(ctx, G, W) {
     if (!st.auftraege.length) return;
     var x = W / 2 - 170, y = 10;
-    rect(ctx, x - 6, y - 4, 352, 12 + st.auftraege.length * 12, 'rgba(10,6,16,0.9)');
+    glas(ctx, x - 8, y - 5, 356, 14 + st.auftraege.length * 12, { r: 6, oben: 'rgba(40,24,56,0.92)', unten: 'rgba(14,8,22,0.95)' });
     F.draw(ctx, 'AUFTRÄGE', x, y, { color: GOLD });
     for (var i = 0; i < st.auftraege.length; i++) {
       var a = st.auftraege[i], yy = y + 12 + i * 12;
@@ -1191,7 +1596,7 @@
   global.Shop = {
     init: init,
     oeffnen: oeffnen, update: update, draw: draw,
-    levelFertig: levelFertig, gegnerWeg: gegnerWeg, tick: tick,
+    levelFertig: levelFertig, gegnerWeg: gegnerWeg, tick: tick, licht: licht,
     drawErgebnis: drawErgebnis, ergebnisZeile: ergebnisZeile, ergebnisTick: ergebnisTick, drawPause: drawPause,
     konto: function () { return st.konto; },
     getragen: getragen,

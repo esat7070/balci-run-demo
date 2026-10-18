@@ -3556,6 +3556,8 @@
     ctx.translate(Math.round(p.cx() - camX), Math.round(p.feet() - camY));
     ctx.scale(fm.sx * klein, fm.sy * klein);
     P.drawChar(ctx, G.lvl.airsoft ? 'yusuf_as' : 'yusuf', 0, 0, opts);
+    // Heiligenschein, Krone, Gold-Jogger ... leuchten und funkeln (shop.js)
+    if (global.Shop && !p.dead) global.Shop.licht(ctx, G, opts);
     ctx.restore();
     // Level 21: die Leihwaffe. Wer HIT ruft, hat beide Haende oben.
     if (G.lvl.airsoft && !p.hitCall && global.Airsoft) {
@@ -4073,7 +4075,9 @@
 
   // Funken in diesen Farben leuchten (Honig, Gold, Glut, Leuchtspur)
   var LEUCHTEN = { '#ffe38a': 1, '#ffd257': 1, '#ffc23c': 1, '#ff8a2a': 1, '#ffb43c': 1, '#fff0a0': 1,
-                   '#ffcf4a': 1, '#c8ff6a': 1, '#8ae0ff': 1, '#ffe9a8': 1 };
+                   '#ffcf4a': 1, '#c8ff6a': 1, '#8ae0ff': 1, '#ffe9a8': 1,
+                   // Spuren aus dem Shop: Seifenblasen, Herzchen
+                   '#bfe8ff': 1, '#ff7aa8': 1 };
   function drawParticles(camX, camY) {
     var l = G.particles.list, hell = LI && LI.stufe() >= 1;
     for (var i = 0; i < l.length; i++) {
@@ -4081,6 +4085,7 @@
       var a = Math.min(1, p.life / (p.max * 0.6));
       ctx.globalAlpha = a;
       if (p.text) {
+        if (hell && LEUCHTEN[p.col]) LI.glow(ctx, p.x - camX + 2.5, p.y - camY + 3.5, 9, p.col, 0.35);
         F.draw(ctx, p.text, p.x - camX, p.y - camY, { color: p.col });
       } else {
         var s = p.shrink ? Math.max(1, Math.round(p.size * a)) : p.size;
@@ -4532,6 +4537,7 @@
     // Yusuf & Hussein
     var f = (G.tick >> 3);
     P.drawChar(ctx, 'yusuf', 84, 240, { pose: 'idle', frame: f, face: (G.tick % 200 < 30) ? 'laugh' : 'normal' });
+    if (global.Shop) { ctx.save(); ctx.translate(84, 240); global.Shop.licht(ctx, G, { pose: 'idle', frame: f }); ctx.restore(); }
     P.drawChar(ctx, 'huseyin', 152, 240, { pose: 'idle', frame: f, flip: true, face: 'normal' });
 
     // schwebende Honiggläser
@@ -4929,6 +4935,7 @@
     if (global.Shop) global.Shop.drawErgebnis(ctx, G, W - 130, 198, G.resultTimer);
 
     P.drawChar(ctx, 'yusuf', 90, 214, { pose: 'cheer', face: 'laugh', frame: (G.tick >> 3) });
+    if (global.Shop) { ctx.save(); ctx.translate(90, 214); global.Shop.licht(ctx, G, { pose: 'cheer', frame: (G.tick >> 3) }); ctx.restore(); }
     // Was Yusuf zum Goldhonig sagt, haengt davon ab, wie viel er hat
     var fazit = !nGold ? 'HÖ HÖ HÖÖÖ!'
               : got === nGold ? 'ALLE DREI. HÖ HÖ HÖÖÖ!'
