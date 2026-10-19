@@ -487,6 +487,7 @@
     G.dialogAnz = (L && !L.ist('de')) ? lines.map(function (l) {
       return (!l || typeof l[1] !== 'string' || l[0] === 'karte' || l[0] === 'kapitel') ? (l && l[1]) : L.t(l[1]);
     }) : null;
+    G.dialogAnzFuer = lines;
     G.dialogIdx = 0;
     G.dialogChar = 0;
     G.dialogT = 0;
@@ -498,7 +499,11 @@
 
   /** Was in Zeile i steht — in der eingestellten Sprache. */
   function dialogText(i) {
-    return G.dialogAnz && G.dialogAnz[i] !== undefined ? G.dialogAnz[i] : G.dialog[i][1];
+    if (G.dialogAnz && G.dialogAnzFuer === G.dialog && G.dialogAnz[i] !== undefined) return G.dialogAnz[i];
+    // G.dialog wurde von aussen gesetzt (Testseiten): dann jetzt uebersetzen
+    var l = G.dialog[i], L = global.Sprache;
+    if (L && !L.ist('de') && typeof l[1] === 'string' && l[0] !== 'karte' && l[0] !== 'kapitel') return L.t(l[1]);
+    return l[1];
   }
 
   /** Dialog ganz beenden und weitermachen (auch beim Ueberspringen). */
