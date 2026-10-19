@@ -292,7 +292,8 @@
       if (v.a < 0.03) continue;
       ctx.globalAlpha = v.a;
       // Sieht aus wie der Boden drumherum: oben die Kante (wenn darueber frei ist)
-      for (var ty = 0; ty < v.h; ty += T) {
+      var gemalt = global.Gelaende && global.Gelaende.attrappe(ctx, G, v, vx, vy);
+      for (var ty = 0; !gemalt && ty < v.h; ty += T) {
         for (var tx = 0; tx < v.w; tx += T) {
           var oben = ty === 0 && !w.solid(Math.floor((v.x + tx) / T), Math.floor(v.y / T) - 1);
           P.draw(ctx, oben ? top : (ty >= 2 * T ? deep : fill), vx + tx, vy + ty);

@@ -65,6 +65,12 @@
   var FLIP_SPD = Math.PI * 2 / 30;  // ein Rueckwaertssalto dauert eine halbe Sekunde
   var FLIP_OK = 0.9;          // so weit darf er beim Landen noch schief sein
 
+  /** Staub beim Springen und Landen hat die Farbe des Bodens (gelaende.js):
+      auf Gras fliegen Halmstueckchen, auf Stein heller Staub. */
+  function staubFarbe(g) {
+    return global.Gelaende && g.world ? global.Gelaende.staub(g.world.theme) : '#e8dcc0';
+  }
+
   /* Schwierigkeitsgrad pro Level. Wirkt auf Tempo und Angriffslust
      der Gegner, damit es von Level zu Level anzieht. */
   var DIFF = 1;
@@ -95,10 +101,13 @@
     this.signs = lvl.signs.slice();
 
     var i, j, r;
+    this.geaendert = null;
     for (i = 0; i < lvl.solids.length; i++) {
       r = lvl.solids[i];
       this.fill(r[0], r[1], r[2], r[3], 1);
     }
+    // Ab hier zaehlt jede Aenderung (das neue Gitter malt gelaende.js ohnehin ganz)
+    this.geaendert = [];
 
     for (i = 0; i < lvl.blocks.length; i++) {
       var b = lvl.blocks[i];
@@ -142,6 +151,11 @@
   };
 
   World.prototype.fill = function (x, y, w, h, v) {
+    // gelaende.js malt die Stellen neu (Arena-Waende, Gitter, Bruecken)
+    if (this.geaendert) {
+      if (this.geaendert.length < 400) this.geaendert.push(x, y, w, h);
+      else this.geaendert = [0, 0, this.w, this.h];      // zu viel auf einmal: alles neu
+    }
     for (var ty = y; ty < y + h; ty++) {
       if (ty < 0 || ty >= this.h) continue;
       for (var tx = x; tx < x + w; tx++) {
@@ -588,7 +602,7 @@
         this.jumpsLeft = 1; this.buffer = 0;
         global.Sound.play('jump');
         g.particles.burst(this.cx(), this.feet(), 5,
-          { col: '#e8dcc0', spread: 1.3, up: 0.2, life: 16, grav: 0.1 });
+          { col: staubFarbe(g), spread: 1.3, up: 0.2, life: 16, grav: 0.1 });
       } else if (bike) {
         // Auf dem Fahrrad gibt es keinen Bauch-Boost. Stattdessen:
         // Rueckwaertssalto. Sauber landen muss man selbst.
@@ -661,12 +675,12 @@
         g.shake(7, 14);
         global.Sound.play('land');
         g.particles.burst(this.cx(), this.feet(), 16,
-          { col: '#e8dcc0', spread: 3.4, up: 0.2, life: 24, grav: 0.22 });
+          { col: staubFarbe(g), spread: 3.4, up: 0.2, life: 24, grav: 0.22 });
         this.poundImpact(g);
       } else if (this.vy >= 0) {
         global.Sound.play('land');
         g.particles.burst(this.cx(), this.feet(), 4,
-          { col: '#e8dcc0', spread: 1.2, up: 0.1, life: 12, grav: 0.14 });
+          { col: staubFarbe(g), spread: 1.2, up: 0.1, life: 12, grav: 0.14 });
       }
       // Sprungkissen?
       if (this.landTile) {

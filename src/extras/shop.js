@@ -1599,6 +1599,8 @@
     levelFertig: levelFertig, gegnerWeg: gegnerWeg, tick: tick, licht: licht,
     drawErgebnis: drawErgebnis, ergebnisZeile: ergebnisZeile, ergebnisTick: ergebnisTick, drawPause: drawPause,
     konto: function () { return st.konto; },
+    /** Honig aufs Konto von ausserhalb eines Levels (Tageslauf) */
+    gutschrift: function (n) { gutschreiben(n); speichern(); },
     getragen: getragen,
     besitzt: function (id) { return besitzt(ware(id)); },
     WARE: WARE, PAKETE: PAKETE, AUFTRAG: AUFTRAG,

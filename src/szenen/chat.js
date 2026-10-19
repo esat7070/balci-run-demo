@@ -117,7 +117,11 @@
     F.draw(ctx, chat.symbol || (chat.titel || 'CHAT').charAt(0), hx + 17, hy + 13, { color: '#ffffff', align: 'center' });
     F.draw(ctx, chat.titel || 'DIE JUNGS', hx + 34, hy + 7, { color: '#ffffff' });
     var unter = k.tippt ? ((LEUTE[k.tippt] || [k.tippt])[0] + ' SCHREIBT...') : (chat.leute || '');
+    // Andere Sprache: erst uebersetzen, dann kuerzen (sonst wird der deutsche Text gekuerzt)
+    var Spr = global.Sprache;
+    if (Spr && !Spr.ist('de')) unter = Spr.t(unter);
     while (unter.length > 4 && F.measure(unter, 1, 1) > BREITE - 42) unter = unter.slice(0, -4) + '...';
+    if (Spr) Spr.schonUebersetzt(unter);
     F.draw(ctx, unter, hx + 34, hy + 19, { color: k.tippt ? '#8cd85a' : '#8a94a8' });
     F.draw(ctx, chat.zeit || '', hx + BREITE - 6, hy + 7, { color: '#8a94a8', align: 'right' });
 

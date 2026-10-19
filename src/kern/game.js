@@ -56,7 +56,9 @@
         save.best[i] = {
           honey: num(b.honey, 99999),
           score: num(b.score, 9999999),
-          time: num(b.time, 359999)
+          time: num(b.time, 359999),
+          // Bestzeit genau (Ticks, 60 pro Sekunde) fuer den Speedrun-Timer
+          ticks: num(b.ticks, 21600000)
         };
       }
     }
@@ -167,11 +169,21 @@
     [/ESSEN MIT DER MAUS ZU YUSUF ZIEHEN\. ODER /g, 'ESSEN: '],
     [/MIT PFEILEN/g, 'MIT DEM STEUERKREUZ'], [/PFEILE/g, 'STEUERKREUZ']
   ];
+  // Dasselbe fuer Englisch: dort wird erst uebersetzt, dann ersetzt
+  var PAD_WORTE_EN = [
+    [/SHIFT \/ E/g, 'X'], [/SHIFT/g, 'X'], [/C OR JUMP/g, 'A'],
+    [/ESC = /g, 'B = '], [/ESC /g, 'B '],
+    [/DRAG FOOD TO YUSUF WITH THE MOUSE\. OR /g, 'FOOD: '],
+    [/WITH THE ARROWS/g, 'WITH THE D-PAD'], [/ARROWS/g, 'D-PAD']
+  ];
   function mitPad() { return !G.touch && global.Input.quelle && global.Input.quelle() === 'pad'; }
   G.mitPad = mitPad;
   G.hinweis = function (t) {
     if (!t || !mitPad()) return t;
-    for (var i = 0; i < PAD_WORTE.length; i++) t = t.replace(PAD_WORTE[i][0], PAD_WORTE[i][1]);
+    var L = global.Sprache, tab = PAD_WORTE;
+    if (L && !L.ist('de')) { t = L.t(t); tab = PAD_WORTE_EN; }
+    for (var i = 0; i < tab.length; i++) t = t.replace(tab[i][0], tab[i][1]);
+    if (L && !L.ist('de')) L.schonUebersetzt(t);
     return t;
   };
 
@@ -242,9 +254,10 @@
       beliebig oft abernten. */
   function loadLevel(idx, respawn) {
     // Ein noch offener Dialog gehoert zum alten Level
-    G.dialog = null; G.dialogAfter = null;
+    G.dialog = null; G.dialogAnz = null; G.dialogAfter = null;
     G.lvlIndex = idx;
-    var lvl = LV.list[idx];
+    // 'tag' = der Tageslauf (tageslauf.js): ein erzeugtes Level, nicht in LV.list
+    var lvl = idx === 'tag' ? G.sonderLvl : LV.list[idx];
     G.lvl = lvl;
     G.world.load(lvl);
     E.setDifficulty(BAL.gegnerTempo(lvl));
@@ -378,6 +391,9 @@
     rec.honey = Math.max(rec.honey, p.honey - st.honey);
     rec.score = Math.max(rec.score, p.score - st.score);
     rec.time = Math.min(rec.time, Math.floor(G.time / 60));
+    // Speedrun-Timer: Abstand zur bisherigen Bestzeit (null = erste Zeit)
+    G.split = rec.ticks ? G.time - rec.ticks : null;
+    rec.ticks = rec.ticks ? Math.min(rec.ticks, G.time) : G.time;
     save.best[idx] = rec;
     // Danach kommt der Gruppenchat (vor dem naechsten Level, chat.js)
     G.chatVon = idx;
@@ -464,6 +480,13 @@
   function startDialog(lines, after) {
     if (!lines || !lines.length) { if (after) after(); return; }
     G.dialog = lines;
+    // Andere Sprache: jetzt uebersetzen, nicht erst beim Zeichnen — die
+    // Schreibmaschine zeigt sonst deutsche Anfaenge englischer Saetze.
+    // G.dialog bleibt deutsch: Szenen reagieren auf den Text (/DREHT SICH UM/).
+    var L = global.Sprache;
+    G.dialogAnz = (L && !L.ist('de')) ? lines.map(function (l) {
+      return (!l || typeof l[1] !== 'string' || l[0] === 'karte' || l[0] === 'kapitel') ? (l && l[1]) : L.t(l[1]);
+    }) : null;
     G.dialogIdx = 0;
     G.dialogChar = 0;
     G.dialogT = 0;
@@ -473,9 +496,14 @@
     G.dlgArm = false; G.dlgHold = 0;
   }
 
+  /** Was in Zeile i steht — in der eingestellten Sprache. */
+  function dialogText(i) {
+    return G.dialogAnz && G.dialogAnz[i] !== undefined ? G.dialogAnz[i] : G.dialog[i][1];
+  }
+
   /** Dialog ganz beenden und weitermachen (auch beim Ueberspringen). */
   function endDialog() {
-    G.dialog = null;
+    G.dialog = null; G.dialogAnz = null;
     G.frozen = false;
     G.dlgArm = false; G.dlgHold = 0;
     var cb = G.dialogAfter; G.dialogAfter = null;
@@ -504,7 +532,7 @@
       return;
     }
     var line = G.dialog[G.dialogIdx];
-    var full = line[1];
+    var full = dialogText(G.dialogIdx);
     G.dialogT = (G.dialogT || 0) + 1;
     if (line[0] === 'karte' || line[0] === 'kapitel') {
       // Die Karte steht kurz, bevor man weiterdruecken kann
@@ -1068,6 +1096,7 @@
       case 'optionen': global.Optionen.update(G); break;
       case 'paused': updatePaused(); break;
       case 'clear': updateClear(); break;
+      case 'tagesziel': global.Tageslauf.updateErgebnis(G, W, H); updateWorld(); break;
       case 'ending': updateEnding(); break;
       case 'nameentry': updateNameEntry(); break;
       case 'scores': updateScores(); break;
@@ -1096,6 +1125,11 @@
     var items = [{ k: 'play', label: 'NEUES SPIEL' }];
     if (save.unlocked > 1) {
       items.push({ k: 'continue', label: 'WEITER AB LEVEL ' + (continueTarget() + 1) });
+    }
+    // Jeden Tag ein neues Level, fuer alle gleich (tageslauf.js) — ab Level 2
+    if (global.Tageslauf && global.Tageslauf.verfuegbar() && save.unlocked > 1) {
+      // Gold, solange der heutige Lauf noch fehlt
+      items.push({ k: 'tageslauf', label: global.Tageslauf.menuLabel(), farbe: global.Tageslauf.heuteGeschafft() ? null : '#ffd257' });
     }
     // Levelauswahl ist immer da. Freigeschaltet wird Level fuer Level,
     // damit man nach einem Absturz nicht wieder von vorne anfangen muss.
@@ -1129,6 +1163,7 @@
     if (it.k === 'play') startGame(0);
     else if (it.k === 'continue') startGame(continueTarget(), true);
     else if (it.k === 'select') { G.state = 'select'; G.selIdx = 0; }
+    else if (it.k === 'tageslauf') global.Tageslauf.starten(G);
     else if (it.k === 'scores') openScores();
     else if (it.k === 'howto') G.state = 'howto';
     else if (it.k === 'troph') G.state = 'trophaeen';
@@ -1238,6 +1273,7 @@
 
   function startGame(idx, cont) {
     G.timers = [];
+    G.tageslauf = null;
     // WEITER spielt auf der Stufe weiter, auf der der Durchgang begann
     var rs = cont ? validRun(idx) : null;
     BAL.setStufe(rs && rs.st ? rs.st : (save.stufe || 'normal'));
@@ -1360,6 +1396,7 @@
   }
 
   function updatePlay() {
+    if (G.lvlIndex === 'tag' && G.tageslauf && global.Tageslauf) global.Tageslauf.update(G);
     if (global.Input.hit('pause')) {
       // Waehrend einer Blende (Tod, Levelwechsel) erst danach pausieren —
       // sonst hebt das Ende der Blende die Pause gleich wieder auf.
@@ -1651,6 +1688,13 @@
     S.play('win');
     G.particles.burst(p.cx(), p.y, 40,
       { col: '#ffd257', spread: 4, up: 1.6, life: 60, grav: 0.12 });
+
+    // Tageslauf: kein Levelfortschritt, eigenes Ergebnis (tageslauf.js)
+    if (G.lvlIndex === 'tag' && G.tageslauf && global.Tageslauf) {
+      global.Tageslauf.fertig(G);
+      G.after(50, function () { G.state = 'tagesziel'; });
+      return;
+    }
 
     var idx = G.lvlIndex, last = (idx >= LV.list.length - 1);
     recordBest(idx);
@@ -2147,6 +2191,7 @@
       if (G.modus && !eigen && G.modMod.hud && !G.scene) G.modMod.hud(ctx, G, W, H);
       if (G.state === 'paused') drawPause();
       if (G.state === 'clear') drawResults();
+      if (G.state === 'tagesziel' && global.Tageslauf) global.Tageslauf.drawErgebnis(ctx, G, W, H);
       if (G.state === 'dialog') drawDialog();
     }
 
@@ -2666,25 +2711,33 @@
     var tx1 = Math.min(w.w - 1, Math.floor((camX + W) / T) + 1);
     var ty0 = Math.max(0, Math.floor(camY / T) - 1);
     var ty1 = Math.min(w.h - 1, Math.floor((camY + H) / T) + 1);
+    var GL = global.Gelaende;
 
-    for (var ty = ty0; ty <= ty1; ty++) {
-      for (var tx = tx0; tx <= tx1; tx++) {
-        if (!w.solid(tx, ty)) continue;
-        if (w.blockAt(tx, ty)) continue;            // Blöcke zeichnen sich selbst
-        var px = tx * T - camX, py = ty * T - camY;
-        if (!w.solid(tx, ty - 1)) P.draw(ctx, topSpr, px, py);
-        else if (!w.solid(tx, ty - 3)) P.draw(ctx, fillSpr, px, py);
-        else P.draw(ctx, deepSpr, px, py);
+    if (GL) {
+      // Boeden mit Kanten, Gras, Steinen und Tiefe (gelaende.js)
+      GL.zeichnen(ctx, G, camX, camY, W, H);
+    } else {
+      for (var ty = ty0; ty <= ty1; ty++) {
+        for (var tx = tx0; tx <= tx1; tx++) {
+          if (!w.solid(tx, ty)) continue;
+          if (w.blockAt(tx, ty)) continue;            // Blöcke zeichnen sich selbst
+          var px = tx * T - camX, py = ty * T - camY;
+          if (!w.solid(tx, ty - 1)) P.draw(ctx, topSpr, px, py);
+          else if (!w.solid(tx, ty - 3)) P.draw(ctx, fillSpr, px, py);
+          else P.draw(ctx, deepSpr, px, py);
+        }
       }
     }
 
     // Handy: eine Reihe Erde unter dem Level, damit die Knoepfe auf dem
     // Boden liegen und nicht im Spielfeld. Unter Gruben bleibt es dunkel.
     if (BOTTOM_PAD > 0 && camY + H > w.h * T) {
+      var tief = GL ? GL.tiefFarbe(theme) : null;
       for (var ex = tx0; ex <= tx1; ex++) {
         var hole = (ex < 0 || ex >= w.w || !w.solid(ex, w.h - 1));
         for (var ey = w.h; ey * T < camY + H; ey++) {
           if (hole) rect(ex * T - camX, ey * T - camY, T, T, '#07050b');
+          else if (tief) rect(ex * T - camX, ey * T - camY, T, T, tief);
           else P.draw(ctx, deepSpr, ex * T - camX, ey * T - camY);
         }
       }
@@ -3017,6 +3070,8 @@
     if (global.Strecke) global.Strecke.hinten(ctx, G, camX, camY);
     // Bloom jetzt einfangen: Hintergrund, Lampen, Kacheln — noch ohne Figuren
     if (EB) EB.bloomFangen(canvas, theme, W, H);
+    // Weiche Schatten unter Yusuf, Gegnern und Boss (gelaende.js)
+    if (global.Gelaende) global.Gelaende.figurenSchatten(ctx, G, camX, camY, W);
 
     var i;
     for (i = 0; i < G.items.length; i++) {
@@ -3184,7 +3239,11 @@
     if (G.jagd && global.Reise) global.Reise.jagdDraw(ctx, G, camX, camY);
     // Der Kumpel hinter Yusuf (Level 14, 15, 22)
     if (G.rider && G.rider.pos) drawRider(camX, camY);
+    // Tageslauf: der beste Lauf von heute als Geist (tageslauf.js)
+    if (G.lvlIndex === 'tag' && global.Tageslauf) global.Tageslauf.drawGeist(ctx, G, camX, camY);
     drawPlayer(camX, camY);
+    // Vor den Fuessen: Grasbueschel (wehen im Wind, weichen Yusuf aus), Regenspritzer
+    if (global.Gelaende) global.Gelaende.vorne(ctx, G, camX, camY, W, H);
     // Falsche Waende liegen VOR Yusuf (er verschwindet dahinter, bis sie verblassen)
     if (global.Strecke) global.Strecke.vorne(ctx, G, camX, camY);
     if (G.fress) global.Fress.draw(ctx, G, camX, camY);
@@ -4190,8 +4249,19 @@
     var rx = G.touch ? W - 58 : W - 8;
     F.draw(ctx, 'PUNKTE ' + p.score, rx, 8, { color: '#ffe9a8', align: 'right', shadow: true });
     var sec = Math.floor(G.time / 60);
-    F.draw(ctx, 'ZEIT ' + Math.floor(sec / 60) + ':' + ('0' + (sec % 60)).slice(-2),
-           rx, 20, { color: '#d8cfe8', align: 'right', shadow: true });
+    // Im Tageslauf auf Hundertstel
+    var zeitTxt = (G.lvlIndex === 'tag' && global.Tageslauf) ? global.Tageslauf.hudZeit(G)
+                  : Math.floor(sec / 60) + ':' + ('0' + (sec % 60)).slice(-2);
+    F.draw(ctx, 'ZEIT ' + zeitTxt, rx, 20, { color: '#d8cfe8', align: 'right', shadow: true });
+    if (G.lvlIndex === 'tag' && global.Tageslauf) global.Tageslauf.drawHud(ctx, G, W);
+    // Speedrun-Timer: oben in der Mitte die Gesamtzeit, darunter das Level
+    if (global.Optionen && global.Optionen.speedrun() && G.lvlIndex !== 'tag') {
+      var bt = save.best[G.lvlIndex], bestT = bt && bt.ticks ? bt.ticks : 0;
+      rect(W / 2 - 52, 3, 104, 25, 'rgba(8,5,12,0.62)');
+      F.draw(ctx, zeitGenau(G.runTime), W / 2, 6, { color: '#ffffff', align: 'center', shadow: true });
+      F.draw(ctx, zeitGenau(G.time), W / 2, 17,
+             { color: bestT && G.time > bestT ? '#ff8a7a' : '#8ae07a', align: 'center', shadow: true });
+    }
     if (global.Spass) global.Spass.hud(ctx, G, rx, 32);
 
     // Gold-Döner-Balken
@@ -4267,7 +4337,7 @@
     ctx.fillRect(0, 96, W, 62);
     rect(0, 96, W, 2, '#ffc23c');
     rect(0, 156, W, 2, '#ffc23c');
-    F.draw(ctx, 'LEVEL ' + G.lvl.id, W / 2, 106, { color: '#ffd257', align: 'center', scale: 1 });
+    F.draw(ctx, G.lvl.kopf || ('LEVEL ' + G.lvl.id), W / 2, 106, { color: '#ffd257', align: 'center', scale: 1 });
     F.draw(ctx, G.lvl.name, W / 2, 118, { color: '#ffffff', align: 'center', scale: 2, shadow: true });
     F.draw(ctx, G.lvl.sub, W / 2, 142, { color: '#c8b8e0', align: 'center' });
     ctx.globalAlpha = 1;
@@ -4470,7 +4540,7 @@
   function drawDialog() {
     if (!G.dialog) return;
     var line = G.dialog[G.dialogIdx];
-    var who = line[0], full = line[1];
+    var who = line[0], full = dialogText(G.dialogIdx);
     if (who === 'karte') { drawKarte(full); return; }
     if (who === 'kapitel') { drawKapitel(full); return; }
     var shown = full.substring(0, Math.floor(G.dialogChar));
@@ -4509,7 +4579,7 @@
       F.draw(ctx, sp.name, tx, by + 8, { color: sp.col, shadow: true });
     }
 
-    var lines = F.wrap(shown, bw - (sp ? 64 : 28), 1, 1);
+    var lines = F.wrap(shown, bw - (sp ? 64 : 28), 1, 1, true);
     for (var i = 0; i < lines.length && i < 4; i++) {
       F.draw(ctx, lines[i], tx, by + (sp ? 24 : 16) + i * 11, { color: '#ffffff' });
     }
@@ -4528,10 +4598,13 @@
     if (EB) EB.hinten(ctx, G, 'zimmer', tcx, 0, W, H);
 
     // Boden
-    for (var tx = 0; tx <= W / 16; tx++) {
-      P.draw(ctx, SP.tileTop('zimmer'), tx * 16, 240);
-      P.draw(ctx, SP.tileFill('zimmer'), tx * 16, 256);
-      P.draw(ctx, SP.tileFill('zimmer'), tx * 16, 272);
+    if (global.Gelaende) global.Gelaende.streifen(ctx, 'zimmer', 240, W, 0);
+    else {
+      for (var tx = 0; tx <= W / 16; tx++) {
+        P.draw(ctx, SP.tileTop('zimmer'), tx * 16, 240);
+        P.draw(ctx, SP.tileFill('zimmer'), tx * 16, 256);
+        P.draw(ctx, SP.tileFill('zimmer'), tx * 16, 272);
+      }
     }
 
     // Yusuf & Hussein
@@ -4577,7 +4650,7 @@
                { color: '#ffd257' });
       }
       F.draw(ctx, it.label, W / 2, y, {
-        color: sel ? '#ffffff' : '#a094b8', align: 'center', shadow: true
+        color: sel ? '#ffffff' : (it.farbe || '#a094b8'), align: 'center', shadow: true
       });
     }
 
@@ -4897,6 +4970,14 @@
            { color: '#a094b8', align: 'center' });
   }
 
+  /** Zeit auf Hundertstel: 1:23.45 (ab einer Stunde 1:02:03.45) */
+  function zeitGenau(ticks) {
+    var cs = Math.floor((ticks || 0) / 60 * 100), s = Math.floor(cs / 100), m = Math.floor(s / 60), h = Math.floor(m / 60);
+    var rest = ('0' + (s % 60)).slice(-2) + '.' + ('0' + (cs % 100)).slice(-2);
+    return h ? h + ':' + ('0' + (m % 60)).slice(-2) + ':' + rest : m + ':' + rest;
+  }
+  G.zeitGenau = zeitGenau;
+
   function drawResults() {
     ctx.fillStyle = 'rgba(8,5,12,0.84)';
     ctx.fillRect(0, 0, W, H);
@@ -4909,12 +4990,18 @@
     var sec = Math.floor(G.time / 60);
     var st = G.levelStart || { honey: 0, score: 0 };
     var nGold = G.goldIdx ? G.goldIdx.length : 0, got = G.goldCount();
+    var speedrun = global.Optionen && global.Optionen.speedrun();
     var rows = [
       ['HONIG IN DIESEM LEVEL', 'x' + (p.honey - st.honey)],
       ['PUNKTE', '' + p.score],
-      ['ZEIT', Math.floor(sec / 60) + ':' + ('0' + (sec % 60)).slice(-2)],
+      ['ZEIT', speedrun ? zeitGenau(G.time) : Math.floor(sec / 60) + ':' + ('0' + (sec % 60)).slice(-2)],
       ['LEBEN ÜBRIG', '' + Math.max(0, p.lives)]
     ];
+    // Speedrun-Timer: Abstand zur Bestzeit, gruen = schneller
+    if (speedrun && G.split !== null && G.split !== undefined) {
+      rows.splice(rows.length - 1, 0, ['ZUR BESTZEIT', (G.split <= 0 ? '-' : '+') + zeitGenau(Math.abs(G.split)),
+                                         G.split <= 0 ? '#8ae07a' : '#ff8a7a']);
+    }
     if (nGold) rows.splice(1, 0, ['GOLDHONIG', got + ' VON ' + nGold]);
     // Gefundene Verstecke (falsche Waende, strecke.js) — wie die Sterne bei Mario
     var stS = global.Strecke ? global.Strecke.stand(G) : null;
@@ -4927,7 +5014,7 @@
     for (var i = 0; i < rows.length; i++) {
       var y = 76 + i * zeile;
       F.draw(ctx, rows[i][0], 70, y, { color: '#c8b8e0' });
-      F.draw(ctx, rows[i][1], W - 190, y, { color: '#ffffff', align: 'right' });
+      F.draw(ctx, rows[i][1], W - 190, y, { color: rows[i][2] || '#ffffff', align: 'right' });
     }
     // Der Rang als Stempel (wie bei Pizza Tower), darunter, was noch fehlt
     if (global.Spass) global.Spass.drawRang(ctx, G, W - 90, 100);
@@ -4965,10 +5052,13 @@
     ctx.fillStyle = 'rgba(8,5,12,0.42)';
     ctx.fillRect(0, 0, W, H);
 
-    for (var tx = 0; tx <= W / 16; tx++) {
-      P.draw(ctx, SP.tileTop('garten'), tx * 16, 240);
-      P.draw(ctx, SP.tileFill('garten'), tx * 16, 256);
-      P.draw(ctx, SP.tileFill('garten'), tx * 16, 272);
+    if (global.Gelaende) global.Gelaende.streifen(ctx, 'garten', 240, W, 0);
+    else {
+      for (var tx = 0; tx <= W / 16; tx++) {
+        P.draw(ctx, SP.tileTop('garten'), tx * 16, 240);
+        P.draw(ctx, SP.tileFill('garten'), tx * 16, 256);
+        P.draw(ctx, SP.tileFill('garten'), tx * 16, 272);
+      }
     }
     var f = (G.tick >> 3);
     P.drawChar(ctx, 'yusuf', 210, 240, { pose: 'idle', face: 'eat', frame: f });
@@ -5228,6 +5318,31 @@
   G._board = boardList;
   G._saveCopy = function () { return JSON.parse(JSON.stringify(save)); };
   G._menu = menuItems;
+  G._startDialog = startDialog;
+  G._zumTitel = toTitle;
+  /** Ein Level, das nicht in LV.list steht (Tageslauf): frisch starten,
+      ohne den gespeicherten Durchgang anzufassen. */
+  G._sonderStart = function (key, lvlData) {
+    G.timers = [];
+    BAL.setStufe('normal');
+    fadeTo(function () {
+      G.checkpoint = null;
+      G.sonderLvl = lvlData;
+      if (G.graeber && G.graeberFuer !== lvlData.sub) { delete G.graeber[key]; G.graeberFuer = lvlData.sub; }
+      var p = G.player;
+      loadLevel(key, false);
+      p.lives = BAL.s('leben'); p.honey = 0; p.score = 0; p.deaths = 0; p.eatCount = 0; p.aura = 0;
+      p.honigLeben = 0;
+      G.run = null;          // saveRun schreibt nur echte Durchgaenge ab Level 1
+      G.runTime = 0;
+      saveCheckpointState();
+      G.levelStart = snapshotStats();
+      G.chatVon = null;
+      S.music(lvlData.music);
+      startDialog(lvlData.intro, function () { G.state = 'play'; });
+    });
+  };
+  G._levelIntro = levelIntro;
   G._titleMenuTop = titleMenuTop;
   G._titleMenuStep = titleMenuStep;
   G._canvas = canvas;          // semih.js haelt das letzte Bild fest, wenn es zerspringt

@@ -1,6 +1,7 @@
 # Balci Run – Demo
 
 **▶️ Spielen: https://esat7070.github.io/balci-run-demo/**
+**▶️ Play in English: https://esat7070.github.io/balci-run-demo/?lang=en**
 
 Die Demo von *Balci Run – Yusufs Honig-Jagd*: ein handgepixeltes Jump'n'Run
 im Browser (PC und Handy, Controller geht auch). Yusuf Balci will eigentlich
@@ -12,6 +13,9 @@ Huseyin im Weg.
 - **Honig-Shop:** Kostüme, Hüte und Spuren für Yusuf, bezahlt mit dem Honig aus
   den Leveln, dazu Aufträge der Jungs
 - Kein Game Over: weiter geht es immer am letzten Checkpoint
+- **Tageslauf** (ab Level 2 im Hauptmenü): jeden Tag ein neues Level, für alle
+  gleich — Bestzeit, Serie und ein Ergebnis zum Teilen mit der Gruppe
+- Deutsch und Englisch (EINSTELLUNGEN → SPRACHE)
 
 ## Steuerung
 

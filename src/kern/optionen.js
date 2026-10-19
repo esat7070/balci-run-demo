@@ -8,8 +8,11 @@
                          HOCH (immer alle Effekte) / SPARSAM (einfache Aufloesung)
      BILDSCHIRMWACKELN   aus = kein Wackeln bei Treffern und Explosionen
      BLITZE              aus = keine weissen Blitze ueber dem ganzen Bild
+     SPEEDRUN-TIMER      Spielzeit auf Hundertstel, am Levelende der Abstand
+                         zur eigenen Bestzeit (ohne Dialoge und Pausen)
      TASTENBELEGUNG      eigene Tasten (input.js); Controller: Steam Input
-     SPRACHE             bisher nur Deutsch
+     SPRACHE             DEUTSCH / ENGLISH (sprache/sprache.js); ohne Wahl
+                         die Sprache des Systems
 
    Gespeichert wird ueber speicher.js ('balci_optionen'), in der
    Steam-Version also auch in der Cloud.
@@ -28,7 +31,8 @@
   var GRAFIKEN = ['auto', 'hoch', 'sparsam'];
   var GRAFIK_NAME = { auto: 'AUTOMATISCH', hoch: 'HOCH', sparsam: 'SPARSAM' };
 
-  var w = { musik: 8, effekte: 8, wackeln: true, blitze: true, skalierung: 'auto', grafik: 'auto', tasten: {} };
+  var w = { musik: 8, effekte: 8, wackeln: true, blitze: true, skalierung: 'auto', grafik: 'auto', tasten: {}, sprache: '', speedrun: false };
+  function L() { return global.Sprache || null; }
 
   /* ---------- Laden, Speichern, Anwenden ---------- */
 
@@ -41,10 +45,13 @@
       w.effekte = stufe(o.effekte, 8);
       w.wackeln = o.wackeln !== false;
       w.blitze = o.blitze !== false;
+      w.speedrun = o.speedrun === true;
       w.skalierung = SKALEN.indexOf(o.skalierung) >= 0 ? o.skalierung : 'auto';
       w.grafik = GRAFIKEN.indexOf(o.grafik) >= 0 ? o.grafik : 'auto';
       w.tasten = (o.tasten && typeof o.tasten === 'object') ? o.tasten : {};
+      w.sprache = (L() && L().SPRACHEN.indexOf(o.sprache) >= 0) ? o.sprache : '';
     }
+    if (L()) L().start(w.sprache);
     anwenden();
   }
 
@@ -104,8 +111,9 @@
     l.push({ k: 'grafik', label: 'GRAFIK', wert: GRAFIK_NAME[w.grafik] });
     l.push({ k: 'wackeln', label: 'BILDSCHIRMWACKELN', wert: w.wackeln ? 'AN' : 'AUS' });
     l.push({ k: 'blitze', label: 'BLITZE', wert: w.blitze ? 'AN' : 'AUS' });
+    l.push({ k: 'speedrun', label: 'SPEEDRUN-TIMER', wert: w.speedrun ? 'AN' : 'AUS' });
     if (!G.touch) l.push({ k: 'tasten', label: 'TASTENBELEGUNG', wert: '>' });
-    l.push({ k: 'sprache', label: 'SPRACHE', wert: 'DEUTSCH' });
+    if (L()) l.push({ k: 'sprache', label: 'SPRACHE', wert: L().NAMEN[L().aktiv()] });
     l.push({ k: 'zurueck', label: 'ZURÜCK', wert: '' });
     return l;
   }
@@ -155,12 +163,18 @@
       G.optHinweis = w.grafik === 'sparsam' ? 'EINFACHE AUFLÖSUNG, WENIGER EFFEKTE.' :
                      w.grafik === 'hoch' ? 'ALLE EFFEKTE, IMMER.' : 'ALLE EFFEKTE. RUCKELT ES, WIRD GESPART.';
       S().play('move');
-    } else if (k === 'wackeln' || k === 'blitze') {
+    } else if (k === 'wackeln' || k === 'blitze' || k === 'speedrun') {
       w[k] = !w[k];
+      if (k === 'speedrun') G.optHinweis = w.speedrun ? 'SPIELZEIT AUF HUNDERTSTEL, DAZU DER ABSTAND ZUR BESTZEIT.' : null;
       if (k === 'wackeln' && w.wackeln && G.shake) G.shake(4, 10);
       S().play('move');
     } else if (k === 'sprache') {
-      G.optHinweis = 'WEITERE SPRACHEN GIBT ES NOCH NICHT.';
+      var sp = L().SPRACHEN, si = sp.indexOf(L().aktiv());
+      si = (si + (dir < 0 ? sp.length - 1 : 1)) % sp.length;
+      w.sprache = sp[si];
+      L().setzen(w.sprache);
+      speichern();
+      G.optHinweis = w.sprache === 'de' ? 'DAS SPIEL SPRICHT JETZT DEUTSCH.' : 'THE GAME NOW SPEAKS ENGLISH.';
       S().play('move');
     } else if (dir === 0) {
       if (k === 'tasten') { G.optSeite = 'tasten'; G.optSel = 0; S().play('select'); }
@@ -269,12 +283,14 @@
     draw: draw,
     wackeln: function () { return w.wackeln; },
     blitze: function () { return w.blitze; },
+    speedrun: function () { return w.speedrun; },
     skalierung: function () { return w.skalierung; },
     grafik: function () { return w.grafik; },
     kannVollbild: kannVollbild,
     istVollbild: istVollbild,
     setVollbild: setVollbild,
-    _werte: w
+    _werte: w,
+    _zeilen: zeilen
   };
 
   laden();

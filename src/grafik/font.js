@@ -137,7 +137,11 @@
     '’': "'", '‘': "'",                   // ’ ‘
     '“': '"', '”': '"', '„': '"',   // “ ” „
     '…': '...', ' ': ' ', '·': '.',  // … NBSP ·
-    '×': '*', '•': '.', '→': '|', '←': '~'
+    '×': '*', '•': '.', '→': '|', '←': '~',
+    // Akzente (Cafe, andere Sprachen): auf den Grundbuchstaben
+    'É': 'E', 'È': 'E', 'Ê': 'E', 'Ë': 'E', 'Á': 'A', 'À': 'A', 'Â': 'A', 'Í': 'I', 'Ì': 'I', 'Î': 'I',
+    'Ï': 'I', 'İ': 'I', 'Ó': 'O', 'Ò': 'O', 'Ô': 'O', 'Ú': 'U', 'Ù': 'U', 'Û': 'U', 'Ç': 'C', 'Ñ': 'N',
+    'Ş': 'S', 'Ğ': 'G'
   };
 
   function normalize(str) {
@@ -150,11 +154,21 @@
     return out;
   }
 
+  /* Andere Sprachen (sprache/sprache.js): uebersetzt wird hier, beim
+     Zeichnen, Messen und Umbrechen. Was keine Uebersetzung hat, bleibt deutsch. */
+  function uebersetzt(s) {
+    var L = global.Sprache;
+    return L ? L.tn(s) : s;
+  }
+
   /** Breite eines Strings in Pixeln (scale=1). */
   function measure(str, scale, tracking) {
+    return breite(uebersetzt(normalize(str)), scale, tracking);
+  }
+  /** Breite eines schon aufbereiteten Textes (ohne Uebersetzung). */
+  function breite(s, scale, tracking) {
     scale = scale || 1;
     tracking = (tracking === undefined) ? 1 : tracking;
-    var s = normalize(str);
     if (!s.length) return 0;
     return (s.length * (GW + tracking) - tracking) * scale;
   }
@@ -169,8 +183,8 @@
     var scale = opts.scale || 1;
     var tracking = (opts.tracking === undefined) ? 1 : opts.tracking;
     var color = opts.color || '#ffffff';
-    var s = normalize(str);
-    var w = measure(s, scale, tracking);
+    var s = uebersetzt(normalize(str));
+    var w = breite(s, scale, tracking);
 
     if (opts.align === 'center') x = Math.round(x - w / 2);
     else if (opts.align === 'right') x = Math.round(x - w);
@@ -203,17 +217,22 @@
 
   /**
    * Zeilenumbruch auf maxWidth Pixel. Gibt Array von Zeilen zurück.
+   * schonUebersetzt: Text ist schon in der Zielsprache (Dialog-Schreibmaschine).
    */
-  function wrap(str, maxWidth, scale, tracking) {
-    var words = String(str).split(' ');
+  function wrap(str, maxWidth, scale, tracking, schonUebersetzt) {
+    var L = global.Sprache, fremd = !!(L && !L.ist('de'));
+    // Andere Sprache: einmal ganz uebersetzen, dann ohne Tabelle messen
+    var text = fremd ? (schonUebersetzt ? normalize(str) : uebersetzt(normalize(str))) : String(str);
+    var words = text.split(' ');
     var lines = [], cur = '';
     for (var i = 0; i < words.length; i++) {
       var test = cur ? cur + ' ' + words[i] : words[i];
-      if (measure(test, scale, tracking) > maxWidth && cur) {
+      if (breite(fremd ? test : normalize(test), scale, tracking) > maxWidth && cur) {
         lines.push(cur); cur = words[i];
       } else cur = test;
     }
     if (cur) lines.push(cur);
+    if (fremd) for (var j = 0; j < lines.length; j++) L.schonUebersetzt(lines[j]);
     return lines;
   }
 
@@ -222,6 +241,7 @@
     draw: draw,
     measure: measure,
     wrap: wrap,
+    norm: normalize,
     /** Gibt es für dieses Zeichen eine Glyphe? (ß wird zu SS) */
     has: function (ch) {
       var s = normalize(ch);
