@@ -89,7 +89,7 @@
 
   var TASTEN_ZEILEN = [
     ['left', 'LAUFEN LINKS'], ['right', 'LAUFEN RECHTS'], ['up', 'HOCH'], ['down', 'RUNTER / STAMPFER'],
-    ['jump', 'SPRINGEN'], ['throw', 'RENNEN / WERFEN'], ['pause', 'PAUSE'], ['puff', 'AUSPUSTEN (SHISHA)']
+    ['jump', 'SPRINGEN'], ['throw', 'RENNEN / WERFEN'], ['stampf', 'ARSCHBOMBE'], ['pause', 'PAUSE'], ['puff', 'AUSPUSTEN (SHISHA)']
   ];
 
 
@@ -208,6 +208,14 @@
     var I = In(), l = zeilen(G), n = l.length;
     if (G.optFangen) return;               // wartet auf eine Taste
     if (G.optSel >= n) G.optSel = n - 1;
+    // Mit der Maus: worauf man zeigt, das ist ausgewaehlt
+    var mz = G.mausZeigt ? G.mausZeigt() : null;
+    if (mz) {
+      for (var mi = 0; mi < n; mi++) {
+        var my = zeileY(G, mi, n);
+        if (mz.y >= my - 4 && mz.y < my + 12 && G.optSel !== mi) { G.optSel = mi; S().play('move'); G.optHinweis = null; }
+      }
+    }
     var tp = I.tap();
     if (tp) {
       for (var i = 0; i < n; i++) {

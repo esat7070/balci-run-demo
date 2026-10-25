@@ -55,7 +55,54 @@
       EINSCHLAFEN_NACH: 300,   // Ticks Stillstehen, bis Yusuf einschlaeft
       TOD_DAUER: 70,           // Ticks vom Tod bis zur Blende (frueher 100)
       TOD_SCHNELL: 24,         // ab da darf Sprung die Todesanimation abkuerzen
-      UNVERWUNDBAR_RESPAWN: 90 // blinken nach dem Wiedereinstieg
+      UNVERWUNDBAR_RESPAWN: 90, // blinken nach dem Wiedereinstieg
+
+      /* Bauchrutscher (21.10., "verbessere den Spielspass"): beim Laufen
+         RUNTER antippen — Yusuf wirft sich auf den Bauch, rutscht flach
+         unter Geschossen durch, raeumt kleine Gegner ab und zerlegt Kisten.
+         Sprung im Rutschen = Bauch-Weitsprung: flach, schnell, weit. */
+      RUTSCH_AB: 1.5,          // so schnell muss er mindestens laufen
+      RUTSCH_TEMPO: 4.4,       // Anfangstempo (Rennen: 3.15)
+      RUTSCH_MAX: 5.0,
+      RUTSCH_BREMSE: 0.972,    // pro Tick
+      RUTSCH_DAUER: 40,        // laengstens so viele Ticks
+      RUTSCH_KOSTET: 28,       // so viel Puste (der Stampfer kostet 42)
+      RUTSCH_HOEHE: 14,        // so flach liegt er (stehend 26)
+      WEIT_V: -7.0,            // Bauch-Weitsprung: Sprungkraft (normal -8.9) ...
+      WEIT_TEMPO: 5.0,         // ... dafuer so schnell
+
+      /* Damit es sich gerecht anfuehlt (wie bei Celeste): */
+      ECKE: 5,                 // stoesst der Kopf knapp an eine Kante, rutscht er so viele Pixel vorbei
+      KANTE: 6,                // fehlt beim Sprung auf eine Kante so wenig, zieht Yusuf sich hoch
+      // Am hoechsten Punkt (Sprung gehalten) nur so viel Schwerkraft, solange er
+      // langsamer steigt/faellt als SCHEITEL_VY (wie Celeste). AUS (1): mit 0.6
+      // starb der Playtest-Bot bei Esat (Level 7) fast doppelt so oft (14 statt 8
+      // Tode in 4 Laeufen) — jeder Sprung bleibt laenger in der Luft und im Feuer.
+      SCHEITEL: 1,
+      SCHEITEL_VY: 1.2,
+      MAGNET: 22,              // Honig in diesem Abstand fliegt Yusuf von selbst zu
+      KETTE_LEBEN: 8,          // Gegner ohne Boden dazwischen: ab 8 gibt es ein Extraleben (wie bei Mario) ...
+      KETTE_LEBEN_ALLE: 4,     // ... und danach alle 4 wieder eins
+      HONIGKETTE: 10,          // so viele Glaeser kurz nacheinander = HONIGKETTE
+      HONIGKETTE_ABSTAND: 45   // hoechstens so viele Ticks zwischen zwei Glaesern
+    },
+
+    /* ---------- Waffen (23.10., waffen.js) ----------
+       In manchen Leveln liegt eine Waffe, die zur Geschichte passt:
+       Nunchaku (Sparmarkt), Shawarma-Messer (Hamza), Obstmesser
+       (Stilbruch), Spartaner-Schwert (Georgios), Krummsaebel (Istanbul).
+       SHIFT / E = Schlag, drei Schlaege hintereinander = Kombo. Mit Waffe
+       gibt es KEINE Arschbombe — dafuer RUNTER + Schlag in der Luft =
+       Abwaertsstich (federt von Gegnern ab, wie bei Shovel Knight). */
+    WAFFEN: {
+      BOSS: 0.5,               // Schaden an Bossen pro Treffer (wie der Stampfer, ein Sprung = 1)
+      PARIERT_BOSS: 1,         // ein zurueckgeschlagenes Geschoss trifft den Boss voll
+      PUFFER: 10,              // so frueh vor dem Ende eines Schlags zaehlt der naechste Druck
+      KOMBO_FENSTER: 18,       // so lange nach einem Schlag geht die Kombo weiter
+      POGO: -7.4,              // Abwaertsstich: so hoch federt Yusuf ab ...
+      POGO_SPRUNG: -9.4,       // ... mit gehaltener Sprungtaste
+      BETAEUBT: 46,            // so lange steht ein zaeher Gegner nach einem Treffer
+      KEINE_BOMBE_PAUSE: 110   // so oft sagt Yusuf, warum es keine Arschbombe gibt
     },
 
     /* ---------- Airsoft (Level 21) ---------- */

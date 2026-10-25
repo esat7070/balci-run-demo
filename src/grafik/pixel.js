@@ -3035,6 +3035,9 @@
     jump: [{ h: -1, t: 0, lL: [-1, -2], lR: [2, 1], aB: [1, -3], aF: [-2, -3] }],
     fall: [{ h: 1, t: 0, lL: [-2, 1], lR: [3, -1], aB: [2, -4], aF: [-3, -4] }],
     pound: [{ h: 2, t: 1, lL: [1, -3], lR: [0, -3], aB: [3, 2], aF: [-4, 2] }],
+    // Bauchrutscher: Arme ueber den Kopf, Beine lang. game.js legt die
+    // Figur flach (Kopf voraus), dann zeigen die Arme nach vorn.
+    rutsch: [{ h: 0, t: 0, lL: [1, 1], lR: [-1, 1], aB: [3, -10], aF: [-3, -10] }],
     hurt: [{ h: 0, t: 0, lL: [-3, 0], lR: [4, 0], aB: [3, -3], aF: [-4, -3] }],
     duck: [{ h: 4, t: 4, lL: [0, -3], lR: [0, -3], aB: [2, 2], aF: [-2, 2] }],
     sleep: [
@@ -3093,16 +3096,23 @@
     var tw = get(torso).w;
     var tx = ORIGIN_X - Math.floor(tw / 2);
     var ty = ORIGIN_Y - cfg.footY + (p.t || 0);
+    // opts.teil: 'kopf' = nur Kopf und Hut, 'koerper' = alles ausser Kopf und Hut
+    // (Bauchrutscher: der Koerper liegt, der Kopf bleibt aufrecht, game.js)
+    var mitKoerper = opts.teil !== 'kopf', mitKopf = opts.teil !== 'koerper';
 
-    draw(sctx, arm, tx + cfg.armBackOX + p.aB[0], ty + cfg.armOY + p.aB[1], false, true);
-    draw(sctx, leg, tx + cfg.legLOX + p.lL[0], ty + cfg.legOY + p.lL[1], false, true);
-    draw(sctx, leg, tx + cfg.legROX + p.lR[0], ty + cfg.legOY + p.lR[1], false, false);
-    draw(sctx, torso, tx, ty, false, false);
+    if (mitKoerper) {
+      draw(sctx, arm, tx + cfg.armBackOX + p.aB[0], ty + cfg.armOY + p.aB[1], false, true);
+      draw(sctx, leg, tx + cfg.legLOX + p.lL[0], ty + cfg.legOY + p.lL[1], false, true);
+      draw(sctx, leg, tx + cfg.legROX + p.lR[0], ty + cfg.legOY + p.lR[1], false, false);
+      draw(sctx, torso, tx, ty, false, false);
+    }
     var headName = cfg.heads[opts.face || 'normal'] || cfg.heads.normal;
     var hx = tx + cfg.headOX, hy = ty + cfg.headOY + (p.h || 0);
-    draw(sctx, headName, hx, hy, false, false);
-    if (hu) draw(sctx, hu.spr, hx + hu.ox, hy + hu.oy, false, false);
-    draw(sctx, ko ? ko.arm : (cfg.armFront || cfg.arm), tx + cfg.armFrontOX + p.aF[0], ty + cfg.armOY + p.aF[1], false, false);
+    if (mitKopf) {
+      draw(sctx, headName, hx, hy, false, false);
+      if (hu) draw(sctx, hu.spr, hx + hu.ox, hy + hu.oy, false, false);
+    }
+    if (mitKoerper) draw(sctx, ko ? ko.arm : (cfg.armFront || cfg.arm), tx + cfg.armFrontOX + p.aF[0], ty + cfg.armOY + p.aF[1], false, false);
 
     if (opts.flash) {
       sctx.save();

@@ -131,6 +131,8 @@
     honig: { ziele: [80, 160, 260], lohn: [60, 110, 170], text: function (n) { return 'SAMMLE ' + n + ' HONIG.'; } },
     gegner: { ziele: [12, 25, 40], lohn: [60, 100, 150], text: function (n) { return 'BESIEGE ' + n + ' GEGNER.'; } },
     stampfer: { ziele: [3, 6, 10], lohn: [70, 110, 160], text: function (n) { return n + ' GEGNER PER BAUCH-STAMPFER.'; } },
+    rutscher: { ziele: [3, 6, 10], lohn: [70, 110, 160], text: function (n) { return n + ' GEGNER PER BAUCHRUTSCHER.'; } },
+    weitsprung: { ziele: [3, 6, 10], lohn: [50, 80, 120], text: function (n) { return n === 1 ? 'EIN BAUCH-WEITSPRUNG.' : n + ' BAUCH-WEITSPRÜNGE.'; } },
     gold: { ziele: [2, 4, 6], lohn: [80, 140, 200], text: function (n) { return 'FINDE ' + n + ' GOLDHONIG.'; } },
     combo: { ziele: [2, 3, 4], lohn: [70, 110, 170], text: function (n) { return 'COMBO X' + n + ' (OHNE BODEN DAZWISCHEN).'; } },
     rang: { ziele: [1, 2, 3], lohn: [90, 160, 240], text: function (n) { return n === 1 ? 'HOL EINMAL RANG S ODER P.' : 'HOL ' + n + 'X RANG S ODER P.'; } },
@@ -500,8 +502,11 @@
   function gegnerWeg(G) {
     melden(G, 'gegner', 1);
     if (G.stampfer) melden(G, 'stampfer', 1);
+    if (G.rutscher) melden(G, 'rutscher', 1);
     if (G.combo >= 2) melden(G, 'combo', G.combo);
   }
+
+  function weitsprung(G) { melden(G, 'weitsprung', 1); }
 
   /* Spuren: was hinter Yusuf herfliegt, wenn er laeuft oder springt */
   var KONFETTI = ['#ff4a8a', '#ffd257', '#6fc8e8', '#8cd85a', '#c88aff'];
@@ -800,6 +805,12 @@
     }
 
     var l = zeilen(G), n = l.length, i;
+    // Mit der Maus: worauf man zeigt, das ist ausgewaehlt
+    var mz = G.mausZeigt ? G.mausZeigt() : null;
+    if (mz) {
+      mz = { x: mz.x - versatz(W), y: mz.y };
+      for (i = 0; i < n; i++) if (inRect(mz, zeileRect(G, i)) && sh.sel[sh.tab] !== i) { sh.sel[sh.tab] = i; S().play('move'); }
+    }
     if (tp) {
       tp = { x: tp.x - versatz(W), y: tp.y };   // Reiter, Zeilen, ZURUECK liegen im mittigen 512er-Feld
       if (inRect(tp, zurueckRect())) { schliessen(G); return; }
@@ -1596,7 +1607,7 @@
   global.Shop = {
     init: init,
     oeffnen: oeffnen, update: update, draw: draw,
-    levelFertig: levelFertig, gegnerWeg: gegnerWeg, tick: tick, licht: licht,
+    levelFertig: levelFertig, gegnerWeg: gegnerWeg, weitsprung: weitsprung, tick: tick, licht: licht,
     drawErgebnis: drawErgebnis, ergebnisZeile: ergebnisZeile, ergebnisTick: ergebnisTick, drawPause: drawPause,
     konto: function () { return st.konto; },
     /** Honig aufs Konto von ausserhalb eines Levels (Tageslauf) */

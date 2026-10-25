@@ -67,6 +67,8 @@
     if (Array.isArray(s.rang)) {
       for (var ri = 0; ri < s.rang.length && ri < LV.list.length; ri++) save.rang[ri] = num(s.rang[ri], 5);
     }
+    // Tipps, die schon sitzen (spass.js): 1 = Bauchrutscher, 2 = Bauch-Weitsprung
+    save.tipps = num(s.tipps, 3);
     // Goldhonig pro Level als Bitmaske (drei Glaeser = 0..7)
     if (Array.isArray(s.gold)) {
       for (var gi = 0; gi < s.gold.length && gi < LV.list.length; gi++) {
@@ -221,6 +223,8 @@
   if (global.Spass) global.Spass.init(G, save, persist);
   // Honigkonto, Shop, Auftraege (shop.js)
   if (global.Shop) global.Shop.init(G, save);
+  // Minispiele: Raenge, Rekorde, Menue (minis.js)
+  if (global.Minis) global.Minis.init(G, save);
 
   /* ================= Level laden ================= */
 
@@ -327,6 +331,9 @@
       G.player.score = st.score;
       G.player.eatCount = st.eatCount;
     }
+    // Die Waffe (waffen.js) bleibt nach einem Tod in der Hand. Im naechsten
+    // Level ist sie weg — es sei denn, das Level gibt eine mit (lvl.waffe).
+    if (!respawn) G.player.waffe = lvl.waffe || null;
     // Auf dem Fahrrad (Level 22) ist die Trefferbox etwas breiter und hoeher
     G.player.w = lvl.bike ? 20 : 12;
     G.player.h = lvl.bike ? 28 : 26;
@@ -410,6 +417,7 @@
     var t = G.scene && G.scene.type;
     if (t === 'mahl') return global.Mahl;
     if (t === 'shisha') return global.Shisha;
+    if (t === 'kasse') return global.Kasse;
     if (t === 'chat') return global.Chat;
     // Sicherheitskontrolle und Hotel (reise.js)
     if (global.Reise && global.Reise.szenen[t]) return global.Reise.szenen[t];
@@ -595,6 +603,12 @@
   G.einschlag = function (x, y, art) { if (EB) EB.einschlag(G, x, y, art); };
   G.onGold = function () { if (global.Spass) global.Spass.gold(G); };
   G.onKill = function (fell) { if (global.Spass) global.Spass.tod(G, fell); };
+  /** Bauchrutscher und Bauch-Weitsprung: Tipps, Aura, Auftraege */
+  G.onRutsch = function () { if (global.Spass && global.Spass.rutsch) global.Spass.rutsch(G); };
+  G.onWeitsprung = function () {
+    if (global.Spass && global.Spass.weitsprung) global.Spass.weitsprung(G);
+    if (global.Shop && global.Shop.weitsprung) global.Shop.weitsprung(G);
+  };
 
   /** Yusuf ist tot. Jeder Tod kostet ein Leben, weiter geht es IMMER am
       letzten Checkpoint (bzw. am Levelstart, wenn noch keiner erreicht
@@ -852,16 +866,8 @@
   G.onAlexDead = function () {
     G.drunk = 0;                 // Kampf vorbei, Yusuf wird wieder nuechtern
     bossDown(LV.alex.end, function () {
-      // Alex hat hier Schicht: Uebergang an die Kasse
-      fadeTo(function () {
-        G.kasse = global.Kasse ? global.Kasse.init() : null;
-        G.frozen = true;
-        G.state = 'play';
-        if (!G.kasse) { G.onKasseDone(); return; }
-        G.after(40, function () {
-          startDialog(LV.alex.kasse, function () { G.onKasseDone(); });
-        });
-      });
+      // Alex hat hier Schicht: an der Kasse wird eingepackt (kasse.js)
+      miniStarten('kasse', LV.alex.kasse, function () { return LV.alex.kasseNach; }, function () { G.onKasseDone(); });
     });
   };
 
@@ -897,13 +903,10 @@
 
   G.onHamzaDead = function () {
     bossDown(LV.hamza.end, function () {
-      // Hamza macht Shawarma, und dann kommt Esat
-      fadeTo(function () {
-        startScene(global.Mahl.init('imbiss'));
-        G.after(40, function () {
-          startDialog(LV.hamza.essen, function () { G.onMahlDone('imbiss'); });
-        });
-      });
+      // Hamzas Shawarma-Challenge (tisch.js), mittendrin kommt Esat
+      miniStarten('imbiss', LV.hamza.essen, function (e) {
+        return (e && e.challenge ? LV.hamza.challengeJa : LV.hamza.challengeNein).concat(LV.hamza.essenNach);
+      }, function () { G.onMahlDone('imbiss'); });
     });
   };
 
@@ -913,12 +916,9 @@
 
   G.onGeorgiosDead = function () {
     bossDown(LV.georgios.end, function () {
-      fadeTo(function () {
-        startScene(global.Mahl.init('taverne'));
-        G.after(40, function () {
-          startDialog(LV.georgios.essen, function () { G.onMahlDone('taverne'); });
-        });
-      });
+      // Omas Teller (taverne.js): Ruf und Antwort im Takt
+      miniStarten('taverne', LV.georgios.essen, function () { return LV.georgios.essenNach; },
+                  function () { G.onMahlDone('taverne'); });
     });
   };
 
@@ -1012,13 +1012,11 @@
   /** Bruchlandung an der Galata-Bruecke. Erst mal essen. */
   G.onFlugDone = function () {
     recordBest(G.lvlIndex);
-    fadeTo(function () {
-      startScene(global.Mahl.init('galata'));
-      S.music('istanbul');
-      G.after(40, function () {
-        startDialog(LV.galata.essen, function () { G.onMahlDone('galata'); });
-      });
-    });
+    S.music('istanbul');
+    // Kein Fisch mehr beim Balikci: Yusuf angelt selbst (angeln.js)
+    miniStarten('galata', LV.galata.essen, function (e) {
+      return (e && e.koenig ? LV.galata.koenig : []).concat(LV.galata.essenNach);
+    }, function () { G.onMahlDone('galata'); });
   };
 
   /** Rezeption, Erinnerung, Nacht. Am Morgen: die Entfuehrung (Level 29). */
@@ -1057,8 +1055,72 @@
   /** Das Spiel ist aus: Bestenliste, Wrapped, Abspann. */
   G.onEndeDone = function () { finishRun(); };
 
-  /** Drei Mal ausgepustet, und Yusuf hat Hunger: weiter zu Georgios. */
+  /** Das Duell ist vorbei, und Yusuf hat Hunger: weiter zu Georgios. */
   G.onShishaDone = function () { nextLevel(14); };
+
+  /* ================= Minispiele (minis.js) =================
+     Ablauf in der Geschichte: Blende -> Szene -> Dialog davor -> Spiel
+     (Anleitung, Spiel, Ergebnis-Karte) -> Dialog danach -> weiter.
+     nachher(ergebnis) liefert die Zeilen danach, je nachdem wie es lief. */
+  var MINI_MOD = { kasse: 'Kasse', shisha: 'Shisha', imbiss: 'Mahl', taverne: 'Mahl', galata: 'Mahl' };
+  function miniSzene(id) {
+    var mod = global[MINI_MOD[id]];
+    if (!mod) return null;
+    return id === 'kasse' || id === 'shisha' ? mod.init() : mod.init(id);
+  }
+
+  function miniStarten(id, vorher, nachher, weiter) {
+    G.mini = null;
+    fadeTo(function () {
+      var sc = miniSzene(id);
+      if (!sc) { weiter(); return; }
+      startScene(sc);
+      G.miniWeiter = function () {
+        var k = G.scene, zeilen = nachher ? nachher(k && k.ergebnis, k) : null;
+        G.miniWeiter = null;
+        startDialog(zeilen || [], function () { G.state = 'play'; weiter(); });
+      };
+      G.after(30, function () {
+        startDialog(vorher || [], function () {
+          if (G.scene) G.scene.los = true;
+          G.state = 'play';
+        });
+      });
+    });
+  }
+
+  /** Die Szene ist fertig (Ergebnis-Karte weggedrueckt). */
+  G.miniEnde = function () {
+    if (G.mini) {
+      // Freies Spiel aus dem Menue: zurueck in die Liste
+      fadeTo(function () {
+        G.scene = null; G.mini = null; G.frozen = false;
+        G.state = 'minis';
+        S.music('menu');
+      });
+      return;
+    }
+    if (G.miniWeiter) G.miniWeiter();
+  };
+
+  /** Aus dem Menue MINISPIELE: ein Spiel fuer sich, ohne Geschichte. */
+  G.miniStart = function (id) {
+    var d = global.Minis && global.Minis.def(id);
+    if (!d) return;
+    G.timers = [];
+    fadeTo(function () {
+      G.checkpoint = null;
+      loadLevel(d.lade, false);
+      G.mini = { id: id };
+      G.miniWeiter = null;
+      var sc = miniSzene(id);
+      if (!sc) { G.mini = null; G.state = 'minis'; return; }
+      startScene(sc);
+      sc.los = true;
+      G.state = 'play';
+      S.music(d.musik);
+    });
+  };
 
   /** Ein Salto ist gelandet. Esat hat dazu eine Meinung. */
   G.onFlip = function (flips) {
@@ -1087,6 +1149,13 @@
 
     if (global.Spass) global.Spass.immer(G);
 
+    // Linke Maustaste = schlagen — nur, wenn Yusuf selbst laeuft (nicht in
+    // Menues, Dialogen, Szenen und den Fahr-Leveln)
+    global.Input.mausAngriff = G.state === 'play' && !G.scene && !G.eat && !G.dialog && !G.cut &&
+                               !(G.modus && G.modMod && G.modMod.full);
+    // Entwickler-Modus (entwickler.js): P ueberspringt Boss-Herzen, Level, Minispiele
+    if (global.Entwickler && global.Entwickler.an() && global.Input.hit('dev')) devTaste();
+
     switch (G.state) {
       case 'title': updateTitle(); break;
       case 'select': updateSelect(); break;
@@ -1097,6 +1166,7 @@
       case 'play': if (G.hitstop > 0) G.hitstop--; else updatePlay(); break;
       case 'wrapped': global.Spass.wrappedUpdate(G); break;
       case 'trophaeen': global.Spass.trophUpdate(G); break;
+      case 'minis': global.Minis.menuUpdate(G, W); break;
       case 'shop': global.Shop.update(G, W); break;
       case 'optionen': global.Optionen.update(G); break;
       case 'paused': updatePaused(); break;
@@ -1121,6 +1191,11 @@
       fest verdrahtet. Levelauswahl gibt es erst nach dem Durchspielen. */
   /** Wohin "WEITER" fuehrt: zum gespeicherten Durchgang, sonst zum
       zuletzt freigeschalteten Level. Menue und Start nutzen dieselbe Zahl. */
+  /** Bis zu welchem Level man waehlen darf. Im Entwickler-Modus: alles. */
+  function freiBis() {
+    return (global.Entwickler && global.Entwickler.an()) ? LV.list.length : save.unlocked;
+  }
+
   function continueTarget() {
     var r = save.run && validRun(save.run.next) ? save.run : null;
     return r ? r.next : Math.min(LV.list.length - 1, save.unlocked - 1);
@@ -1141,6 +1216,8 @@
     items.push({ k: 'select', label: 'LEVEL WÄHLEN' });
     // Kostueme, Huete, Spuren — bezahlt mit dem Honig aus den Leveln
     if (global.Shop) items.push({ k: 'shop', label: 'SHOP (' + global.Shop.konto() + ' HONIG)' });
+    // Die Minispiele nochmal spielen (Rekorde, Raenge) — sobald man eins erreicht hat
+    if (global.Minis && global.Minis.irgendeinsFrei()) items.push({ k: 'minis', label: 'MINISPIELE' });
     items.push({ k: 'scores', label: 'BESTENLISTE' });
     items.push({ k: 'howto', label: 'STEUERUNG' });
     if (global.Spass) items.push({ k: 'troph', label: 'TROPHÄEN ' + global.Spass.anzahl() + '/' + global.Spass.gesamt });
@@ -1153,6 +1230,18 @@
   function inRect(tp, r) {
     return tp && tp.x >= r.x && tp.x < r.x + r.w && tp.y >= r.y && tp.y < r.y + r.h;
   }
+
+  /** Die Maus wurde bewegt: wohin sie zeigt (sonst null). So waehlt man in
+      Menues mit der Maus aus, ohne dass die Tastatur ihr ins Gehege kommt. */
+  var mausAlt = { x: -1, y: -1 };
+  function mausZeigt() {
+    var pt = global.Input.pointer();
+    if (!pt || !pt.on || G.touch) return null;
+    if (Math.abs(pt.x - mausAlt.x) < 0.5 && Math.abs(pt.y - mausAlt.y) < 0.5) return null;
+    mausAlt.x = pt.x; mausAlt.y = pt.y;
+    return { x: pt.x, y: pt.y };
+  }
+  G.mausZeigt = mausZeigt;
 
   /* Wo die Dinge auf dem Titelbild liegen — Zeichnen und Antippen
      benutzen dieselben Masse. */
@@ -1172,9 +1261,60 @@
     else if (it.k === 'scores') openScores();
     else if (it.k === 'howto') G.state = 'howto';
     else if (it.k === 'troph') G.state = 'trophaeen';
+    else if (it.k === 'minis') global.Minis.oeffnen(G);
     else if (it.k === 'shop') global.Shop.oeffnen(G, 'title');
     else if (it.k === 'optionen') global.Optionen.oeffnen(G, 'title');
     else if (it.k === 'beenden') beenden();
+  }
+
+  /* ================= Entwickler-Taste (nur mit entwickler.js) =================
+     Esat, 25.10.: "wenn ich P druecke, ist die erste Mutation vom Boss sofort
+     weg — damit ich durchrunnen kann". Dazu: Level und Minispiele ueberspringen. */
+  function devMeldung(t) {
+    if (G.toasts) G.toasts.push({ art: 'text', zeile1: 'DEV: ' + t, zeile2: '', col: '#ff9ec4', zeit: 90 });
+  }
+  function devTaste() {
+    if (G.fadeDir || G.state === 'paused') return;
+    var p = G.player, b = G.boss, m = G.modus;
+    if (G.state === 'dialog') { devMeldung('ERST DEN DIALOG WEG (SPRUNG HALTEN)'); return; }
+    // Minispiel: gleich zur Ergebnis-Karte
+    if (G.scene && global.Minis && global.Minis.sofortEnde(G, 0)) { devMeldung('MINISPIEL UEBERSPRUNGEN'); return; }
+    if (G.scene && G.scene.type === 'schlaf') { G.scene.min = Math.max(G.scene.min, G.scene.wecken - 1); devMeldung('AUSGESCHLAFEN'); return; }
+    if (G.state !== 'play' || !p || !G.lvl) return;
+    // Boss: das aktuelle Herz (die aktuelle Form) ist weg
+    if (b && !b.dead) {
+      if (b.state === 'transform' || b.state === 'hoch') { devMeldung('BOSS VERWANDELT SICH GERADE'); return; }
+      b.invuln = 0;
+      if (b.verwundbar && !b.verwundbar()) { b.state = 'verwirrt'; b.timer = 120; }
+      b.hp = Math.min(b.hp, 0.01);
+      b.hit(G, 1, p, 'brille');
+      devMeldung(b.dead ? 'BOSS BESIEGT' : 'BOSS-HERZ WEG');
+      return;
+    }
+    // Fahr-, Flug- und Ess-Level: kurz vors Ziel
+    if (G.eat) { G.eat.kcal = G.eat.goal; devMeldung('SATT'); return; }
+    if (m && G.modMod) {
+      var mod = G.modMod;
+      if (mod.ZIEL !== undefined && m.pos !== undefined) {
+        m.pos = (mod.ZIEL - 3) * 200 - (mod.PLAYER_Z || 0); if (m.speed !== undefined && mod.MAX) m.speed = mod.MAX;
+        devMeldung('KURZ VORS ZIEL'); return;
+      }
+      if (G.lvl.mode === 'flug' && m.dist !== undefined) { G.flugGefragt = true; m.dist = mod.ZIEL - 30; devMeldung('ISTANBUL IN SICHT'); return; }
+      if (m.ziel !== undefined && m.kcal !== undefined) { m.kcal = m.ziel; devMeldung('SATT'); return; }
+      if (G.lvl.mode === 'fussball' && G.onFussballDone) { G.modus = null; G.onFussballDone(); devMeldung('SPIEL GEWONNEN'); return; }
+    }
+    // Ein Boss wartet noch: direkt in die Arena
+    var mini = E.MINIBOSS && E.MINIBOSS[G.lvl.bossType];
+    if (G.lvl.boss && !G.bossStarted && G.arena) {
+      p.x = G.arena.x + 80; p.y = G.lvl.boss.y * T - p.h - 2; p.vx = 0; p.vy = 0;
+      devMeldung('AB IN DIE ARENA'); return;
+    }
+    // Sonst: Level geschafft
+    if (!p.won && !p.dead && (!G.lvl.boss || (mini && G.bossCleared))) {
+      G.bossStarted = true; G.bossCleared = true;
+      p.x = G.lvl.goal[0] * T + 12 - p.w / 2; p.y = G.lvl.goal[1] * T - p.h - 2; p.vy = 0;
+      devMeldung('ZIEL');
+    }
   }
 
   /** Desktop-Version: Spielstand sichern, dann das Fenster schliessen. */
@@ -1195,6 +1335,15 @@
     if (G.menuIdx >= n) G.menuIdx = 0;
     if (global.Online && G.tick % 120 === 0) global.Online.refresh();
 
+    // Mit der Maus: worauf man zeigt, das ist ausgewaehlt
+    var mz = mausZeigt();
+    if (mz) {
+      var mt = titleMenuTop(n), ms = titleMenuStep(n);
+      for (var mi = 0; mi < n; mi++) {
+        var mh = F.measure(items[mi].label, 1, 1) / 2 + 24;
+        if (inRect(mz, { x: W / 2 - mh, y: mt + mi * ms - 5, w: mh * 2, h: ms }) && G.menuIdx !== mi) { G.menuIdx = mi; S.play('move'); }
+      }
+    }
     // Am Handy: Menuepunkte direkt antippen
     var tp = global.Input.tap();
     if (tp) {
@@ -1241,8 +1390,15 @@
   }
 
   function updateSelect() {
-    var max = Math.min(LV.list.length, save.unlocked);
+    var max = Math.min(LV.list.length, freiBis());
     var sc = selectCards();
+    var mz = mausZeigt();
+    if (mz) {
+      for (var mi = 0; mi < max; mi++) {
+        var mr = cardRect(sc, mi);
+        if (inRect(mz, { x: mr.x, y: mr.y - 8, w: mr.w, h: mr.h + 8 }) && G.selIdx !== mi) { G.selIdx = mi; S.play('move'); }
+      }
+    }
     var tp = global.Input.tap();
     if (tp) {
       for (var i = 0; i < max; i++) {
@@ -1345,7 +1501,7 @@
     // Was noch geplant war (Boss-Abspann, Levelende), gehoert zum alten
     // Spiel. Sonst sprang mitten im Hauptmenue ein Dialog auf.
     G.timers = [];
-    fadeTo(function () { G.timers = []; G.state = 'title'; G.menuIdx = 0; S.music('menu'); });
+    fadeTo(function () { G.timers = []; G.state = 'title'; G.menuIdx = 0; G.mini = null; G.miniWeiter = null; S.music('menu'); });
   }
 
   /** Pause oeffnen — aus dem Spiel oder mitten aus einem Dialog. Beim
@@ -1385,6 +1541,8 @@
   function updatePaused() {
     var In = global.Input, pb = pauseButtons();
     if (G.pauseSel === undefined) G.pauseSel = 0;
+    var mz = mausZeigt();
+    if (mz) for (var mi = 0; mi < pb.length; mi++) if (inRect(mz, pb[mi]) && G.pauseSel !== mi) { G.pauseSel = mi; S.play('move'); }
     var tp = In.tap();
     if (tp) {
       for (var i = 0; i < pb.length; i++) if (inRect(tp, pb[i])) { G.pauseSel = i; activatePause(i); return; }
@@ -1463,7 +1621,6 @@
     if (global.Fress) global.Fress.update(G);
     // Level 8 hat seine eigene Welt (Couch, Schreibtisch, Essen)
     if (G.scene) { sceneMod().update(G, W, H); return; }
-    if (G.kasse) { global.Kasse.update(G, W, H); return; }
     if (G.eat) { global.Eat.update(G, W, H); return; }
     if (G.modus && G.modMod.full) {
       // Der Levelname oben geht auch in den Modulen nach ein paar Sekunden weg
@@ -1654,6 +1811,8 @@
                : (bt === 'hamza') ? LV.hamza.start
                : (bt === 'georgios') ? LV.georgios.start
                : (E.MINIBOSS[bt] ? LV.mini[bt].start : LV.boss.start);
+        // Kommt Yusuf mit einer Waffe (Hamzas Messer, Opas Schwert ...), sagt der Boss was dazu
+        if (global.Waffen) d0 = global.Waffen.bossZeilen(G, bt, d0);
         // Erst das Standbild mit Namen (wie im Kino), dann das Gespraech.
         // Nach einem Tod (auch mit allen Leben) kommt beides nicht wieder.
         var kt = LV.bossKarten && LV.bossKarten[bt];
@@ -1743,15 +1902,10 @@
     // Level 14: der reservierte Tisch im Stilbruch. Jetzt wird geraucht.
     if (G.lvl.id === 14) {
       G.after(50, function () {
-        fadeTo(function () {
-          startScene(global.Shisha.init());
-          G.after(30, function () {
-            startDialog(LV.shisha.vorher, function () {
-              if (G.scene) G.scene.phase = 'rauchen';
-              G.state = 'play';
-            });
-          });
-        });
+        miniStarten('shisha', LV.shisha.vorher, function () {
+          var k = G.scene;
+          return (k && k.sieg ? LV.shisha.sieg : LV.shisha.niederlage).concat(LV.shisha.nachher);
+        }, function () { G.onShishaDone(); });
       });
       return;
     }
@@ -2174,6 +2328,7 @@
     else if (G.state === 'nameentry') { drawNameEntry(); }
     else if (G.state === 'wrapped') { global.Spass.wrappedDraw(ctx, G, W, H); }
     else if (G.state === 'trophaeen') { global.Spass.trophDraw(ctx, G, W, H); }
+    else if (G.state === 'minis') { global.Minis.menuDraw(ctx, G, W, H); }
     else if (G.state === 'shop') { global.Shop.draw(ctx, G, W, H); }
     else if (G.state === 'optionen') {
       // Aus der Pause: das Spiel bleibt dahinter stehen
@@ -2192,7 +2347,7 @@
       // Semih: Sepia, zerspringendes Bild, Anzeige der Kraftprobe
       if (global.SemihKampf) global.SemihKampf.overlay(ctx, G, W, H);
       var eigen = G.modus && G.modMod.full;
-      if (!G.eat && !G.kasse && !G.scene && !G.cut && !eigen) drawHUD();
+      if (!G.eat && !G.scene && !G.cut && !eigen) drawHUD();
       if (G.modus && !eigen && G.modMod.hud && !G.scene) G.modMod.hud(ctx, G, W, H);
       if (G.state === 'paused') drawPause();
       if (G.state === 'clear') drawResults();
@@ -2202,6 +2357,10 @@
 
     // Trophaeen, Rang, "so knapp": immer ganz oben
     if (global.Spass) global.Spass.drawOben(ctx, G, W, H);
+    if (global.Entwickler && global.Entwickler.an()) {
+      rect(W - 26, H - 11, 24, 9, 'rgba(255,74,138,0.85)');
+      F.draw(ctx, 'DEV', W - 14, H - 10, { color: '#ffffff', align: 'center' });
+    }
 
     if (G.muteFlash > 0) {
       F.draw(ctx, G.muteState ? 'TON AUS' : 'TON AN', W - 8, 8,
@@ -3027,10 +3186,6 @@
       sceneMod().draw(ctx, G, W, H);
       return;
     }
-    if (G.kasse) {
-      global.Kasse.draw(ctx, G, W, H);
-      return;
-    }
     if (G.eat) {
       global.Eat.draw(ctx, G, W, H);
       if (G.banner > 0) drawBanner();
@@ -3068,6 +3223,7 @@
     drawSigns(camX, camY);
     drawGoal(camX, camY);
     drawTiles(camX, camY);
+    if (G.lvl.bett) drawBett(camX, camY);
     drawHazards(camX, camY);
     drawBlocks(camX, camY);
     drawMovers(camX, camY);
@@ -3090,6 +3246,8 @@
         ctx.beginPath(); ctx.arc(ix + it.w / 2, iy + it.h / 2, 13, 0, 6.3); ctx.fill();
         ctx.globalAlpha = 1;
       }
+      // Waffen werden fein gezeichnet und leuchten (waffen.js)
+      if (it.waffe && global.Waffen && global.Waffen.zeichneItem(ctx, it, ix, iy, G.tick)) continue;
       P.draw(ctx, it.spr, ix, iy);
       if ((it.t === 'gold' || it.t === 'goldhonig') && (G.tick >> 2) % 6 === 0) {
         G.particles.spawn({ x: it.x + it.w / 2, y: it.y + 6, vx: (Math.random() - 0.5), vy: -0.5,
@@ -3275,6 +3433,33 @@
   }
 
   /* ---------- Level 11: Yusufs Haus ---------- */
+
+  /** Yusufs Bett (Level 1): liegt auf der Plattform lvl.bett = [x, y, w].
+      Darunter eine Kachel Luft — nur fuer den Bauchrutscher. */
+  function drawBett(camX, camY) {
+    var b = G.lvl.bett, x0 = Math.round(b[0] * T - camX), top = Math.round(b[1] * T - camY), w = b[2] * T;
+    if (x0 > W || x0 + w < -20) return;
+    // Dunkel unterm Bett (der Honig leuchtet darin)
+    rect(x0 + 2, top + T, w - 4, T, 'rgba(10,6,16,0.45)');
+    // Gestell und Fuesse
+    rect(x0, top + 2, w, T - 4, '#6a4428');
+    rect(x0, top + 2, w, 2, '#8a5c36');
+    rect(x0, top + T - 3, w, 1, '#4a2e1a');
+    rect(x0 + 1, top + T - 2, 3, T + 2, '#4a2e1a');
+    rect(x0 + w - 4, top + T - 2, 3, T + 2, '#4a2e1a');
+    // Kopfteil rechts
+    rect(x0 + w - 4, top - 14, 5, 18, '#5a3a22');
+    rect(x0 + w - 4, top - 14, 5, 2, '#8a5c36');
+    // Matratze, Kissen, Decke (mit Honigtupfen, was sonst)
+    rect(x0 + 1, top - 4, w - 5, 6, '#ece6f2');
+    rect(x0 + 1, top + 1, w - 5, 1, '#b8b0c8');
+    rect(x0 + w - 19, top - 8, 14, 5, '#ffffff');
+    rect(x0 + w - 19, top - 4, 14, 1, '#cfc8dc');
+    rect(x0 - 1, top - 6, w - 22, 7, '#4a6ad0');
+    rect(x0 - 1, top - 6, w - 22, 1, '#7a96f0');
+    rect(x0 - 1, top + 1, w - 22, 2, '#34509e');
+    for (var i = 6; i < w - 24; i += 12) rect(x0 + i, top - 3, 3, 2, '#ffc23c');
+  }
 
   function drawHaus(camX, camY) {
     var gy = 15 * T - camY, x0 = 6 - camX, w = 112;
@@ -3616,17 +3801,42 @@
     // Erinnerung ist Yusuf wieder klein.
     var fm = global.Spass ? global.Spass.form(G) : { sx: 1, sy: 1 };
     var klein = G.klein || 1;
+    var wer = G.lvl.airsoft ? 'yusuf_as' : 'yusuf';
     ctx.save();
     ctx.translate(Math.round(p.cx() - camX), Math.round(p.feet() - camY));
-    ctx.scale(fm.sx * klein, fm.sy * klein);
-    P.drawChar(ctx, G.lvl.airsoft ? 'yusuf_as' : 'yusuf', 0, 0, opts);
-    // Heiligenschein, Krone, Gold-Jogger ... leuchten und funkeln (shop.js)
-    if (global.Shop && !p.dead) global.Shop.licht(ctx, G, opts);
+    if (ps.pose === 'rutsch' && !p.dead) {
+      // Bauchrutscher und Weitsprung: der Koerper liegt flach (Bauch unten,
+      // Arme voraus), der Kopf bleibt aufrecht und schaut nach vorn
+      var kl = P.kopfLage(wer, opts);
+      ctx.save();
+      ctx.translate(-p.facing * 14, -10);
+      ctx.rotate(p.facing * Math.PI / 2);
+      ctx.scale(fm.sx * klein, fm.sy * klein);
+      opts.teil = 'koerper';
+      P.drawChar(ctx, wer, 0, 0, opts);
+      if (global.Shop) global.Shop.licht(ctx, G, { pose: opts.pose, frame: opts.frame, flip: opts.flip, hut: null });
+      ctx.restore();
+      if (kl) ctx.translate(Math.round(p.facing * 9 - kl.kx), Math.round(-14 - kl.ky));
+      ctx.scale(klein, klein);
+      opts.teil = 'kopf';
+      P.drawChar(ctx, wer, 0, 0, opts);
+      if (global.Shop) global.Shop.licht(ctx, G, { pose: opts.pose, frame: opts.frame, flip: opts.flip, kostuem: null });
+      opts.teil = null;
+    } else {
+      ctx.scale(fm.sx * klein, fm.sy * klein);
+      P.drawChar(ctx, wer, 0, 0, opts);
+      // Heiligenschein, Krone, Gold-Jogger ... leuchten und funkeln (shop.js)
+      if (global.Shop && !p.dead) global.Shop.licht(ctx, G, opts);
+    }
     ctx.restore();
+    // Nunchaku, Messer, Schwert, Saebel in der Hand — mit Schlagspur (waffen.js)
+    if (p.waffe && !p.dead && global.Waffen) global.Waffen.zeichnen(ctx, G, p, camX, camY, ps);
     // Level 21: die Leihwaffe. Wer HIT ruft, hat beide Haende oben.
     if (G.lvl.airsoft && !p.hitCall && global.Airsoft) {
       var tief = (ps.pose === 'duck' || ps.pose === 'pound' || ps.pose === 'sleep') ? 3 : 0;
-      global.Airsoft.drawGun(ctx, p.cx() - camX + p.facing * 8, p.feet() - camY - 12 + tief,
+      var vorn = 8;
+      if (ps.pose === 'rutsch') { tief = 8; vorn = 16; }   // flach liegend: Waffe vorn am Boden
+      global.Airsoft.drawGun(ctx, p.cx() - camX + p.facing * vorn, p.feet() - camY - 12 + tief,
                              p.facing < 0, 1, p.muzzle > 0);
       if (p.reload > 0 && (G.tick >> 3) % 2 === 0) {
         F.draw(ctx, 'NACHLADEN', p.cx() - camX, p.y - camY - 12, { color: '#c8c0d8', align: 'center', shadow: true });
@@ -4224,6 +4434,8 @@
                         : (voll ? '#8cd85a' : '#ffc23c'));
       rect(8, 58, sf, 2, 'rgba(255,255,255,0.3)');
       F.draw(ctx, 'BAUCH', 72, 58, { color: voll ? '#c8b8e0' : '#8f86a8', shadow: true });
+      // Daneben: die Waffe und wie weit die Kombo ist (waffen.js)
+      if (p.waffe && global.Waffen) global.Waffen.hud(ctx, G, 108, 58);
     }
 
     // Level 21: wie viele BBs noch im Magazin sind
@@ -4372,6 +4584,7 @@
     felix:   { name: 'FELIX',   col: '#8ae07a' },
     kontrolle: { name: 'SICHERHEIT', col: '#8ab4ff' },
     balikci: { name: 'FISCHBROT-MANN', col: '#6ab0e0' },
+    haendler: { name: 'HÄNDLER', col: '#e8a85a' },
     rezeption: { name: 'REZEPTION', col: '#e87a8a' },
     semih:   { name: 'SEMIH',   col: '#ff4a4a' },
     unbekannt: { name: '???',   col: '#ff4a4a' },
@@ -4454,6 +4667,10 @@
     } else if (who === 'leibwaechter' || who === 'anzug') {
       ctx.scale(2, 2);
       P.draw(ctx, 'leibwaechter', 0, 1 + (talking ? 1 : 0));
+    } else if (who === 'haendler') {
+      // Der Haendler auf der Galata-Bruecke (Istanbul): schenkt Yusuf einen Saebel
+      ctx.scale(2, 2);
+      P.draw(ctx, talking ? 'haendler2' : 'haendler', 2, 1);
     } else if (who === 'semih' || who === 'unbekannt') {
       // Semih: nur ein Schatten. Und zwei Augen.
       rect(0, 0, 30, 30, '#2a0a0e');
@@ -4720,7 +4937,7 @@
           : two ? { num: 5, ns: 3, zu: 34, frueh: 46, hon: 27, honT: 32, gold: 43, pts: 52, time: 62, neu: 40 }
                 : { num: 10, ns: 3, zu: 52, frueh: 64, hon: 44, honT: 49, gold: 62, pts: 76, time: 90, neu: 60 };
     for (var i = 0; i < sc.n; i++) {
-      var unlocked = i < save.unlocked;
+      var unlocked = i < freiBis();
       var cr = cardRect(sc, i);
       var x = cr.x, y = cr.y, cw = cr.w, ch = cr.h;
       var sel = (i === G.selIdx);
@@ -4767,7 +4984,7 @@
 
     // Name und Untertitel des gewaehlten Levels
     var selLvl = LV.list[Math.min(G.selIdx, sc.n - 1)];
-    var offen = G.selIdx < save.unlocked;
+    var offen = G.selIdx < freiBis();
     F.draw(ctx, offen ? selLvl.name : 'NOCH NICHT FREIGESPIELT',
            W / 2, sc.bottom + (two ? 10 : 14),
            { color: offen ? '#ffffff' : '#6a6280', align: 'center', scale: 2, shadow: true });
@@ -4791,23 +5008,27 @@
       ['STICK / STEUERKREUZ', 'LAUFEN'],
       ['A ODER B', 'SPRINGEN'],
       ['NOCHMAL IN DER LUFT', 'BAUCH-BOOST (DOPPELSPRUNG)'],
-      ['RUNTER IN DER LUFT', 'BAUCH-STAMPFER'],
+      ['RUNTER ODER LB IN DER LUFT', 'ARSCHBOMBE (BAUCH-STAMPFER)'],
+      ['RUNTER BEIM LAUFEN', 'BAUCHRUTSCHER. DABEI SPRUNG = WEITSPRUNG'],
       ['X / RB / RT', 'RENNEN + KIPPE WERFEN'],
       ['X / RB / RT (AIRSOFT)', 'BBS SCHIESSEN. HIT RUFEN: NIE.'],
+      ['X (MIT WAFFE)', 'SCHLAGEN. RUNTER + SCHLAG IN DER LUFT = STICH'],
       ['START', 'PAUSE'],
       ['B', 'ZURÜCK (IN MENÜS)']
     ] : [
-      ['PFEILE / A D', 'LAUFEN'],
-      ['LEERTASTE / W', 'SPRINGEN'],
+      ['A / D (ODER PFEILE)', 'LAUFEN'],
+      ['LEERTASTE', 'SPRINGEN'],
       ['NOCHMAL IN DER LUFT', 'BAUCH-BOOST (DOPPELSPRUNG)'],
-      ['PFEIL RUNTER IN DER LUFT', 'BAUCH-STAMPFER'],
+      ['STRG / C IN DER LUFT', 'ARSCHBOMBE (BAUCH-STAMPFER)'],
+      ['S BEIM LAUFEN', 'BAUCHRUTSCHER. DABEI SPRUNG = WEITSPRUNG'],
       ['SHIFT / E', 'RENNEN + KIPPE WERFEN'],
-      ['SHIFT / E (AIRSOFT)', 'BBS SCHIESSEN. HIT RUFEN: NIE.'],
-      ['ESC / P', 'PAUSE'],
+      ['MAUSKLICK / E (WAFFE)', 'SCHLAGEN. S + SCHLAG IN DER LUFT = STICH'],
+      ['MAUSKLICK / E (AIRSOFT)', 'BBS SCHIESSEN. HIT RUFEN: NIE.'],
+      ['ESC', 'PAUSE.   MENÜS: MIT DER MAUS ANKLICKEN'],
       ['M', 'TON AN / AUS']
     ];
     for (var i = 0; i < rows.length; i++) {
-      var y = 54 + i * 16;
+      var y = 52 + i * 13;
       F.draw(ctx, rows[i][0], 30, y, { color: '#ffe9a8' });
       F.draw(ctx, rows[i][1], 210, y, { color: '#ffffff' });
     }
@@ -4936,12 +5157,16 @@
     var l = G.lvl, sc = G.scene, h = null;
     if (!l) return null;
     if (sc && sc.type === 'schlaf') h = sc.phase === 'traum' ? 'SPRUNG = MIT DEM BAUCH FLATTERN. BROKKOLI AUSWEICHEN.' : 'SPRUNG = VORSPULEN.';
-    else if (sc && sc.type === 'shisha') h = 'C ODER SPRUNG = AUSPUSTEN, WENN JETZT! BLINKT.';
+    else if (sc && sc.type === 'shisha') h = 'SPRUNG HALTEN = ZIEHEN, IM GRÜNEN LOSLASSEN. SPRUNG = AUSPUSTEN IM FELD. ESAT ZIEHT: SPRUNG = RÜLPSEN.';
+    else if (sc && sc.type === 'kasse') h = 'LINKS / RUNTER / RECHTS = IN TÜTE 1 / 2 / 3. NIE SCHWERES AUF ZARTES. SHIFT / E = NICHT MEINS.';
+    else if (sc && sc.type === 'mahl' && sc.kind === 'taverne') h = 'OMA LEGT VOR, DU ISST NACH: SPRUNG = BEISSEN, RUNTER = TUNKEN. IM SELBEN RHYTHMUS.';
+    else if (sc && sc.type === 'mahl' && sc.kind === 'galata') h = 'SPRUNG HALTEN = AUSHOLEN UND DRILLEN. SPRUNG = ANHAUEN. LINKS / RECHTS = MÖWEN.';
+    else if (sc && sc.type === 'mahl') h = 'SPRUNG = BEISSEN, IM TAKT DES RINGS. RUNTER = AYRAN. NICHT MIT VOLLEM MUND!';
     else if (l.eat) h = 'ESSEN MIT DER MAUS ZU YUSUF ZIEHEN. ODER PFEILE + SPRUNG.';
     else if (l.mode === 'fussball') h = 'SHIFT / E = SCHUSS. REINSPRINGEN = KOPFBALL. STAMPFER = BAUCHSCHUSS.';
     else if (l.mode === 'rennen') h = 'PFEILE = LENKEN. SPRUNG = NITRO. RUNTER = BREMSEN.';
-    else if (l.mode === 'fahrt') h = 'PFEILE = LENKEN. SHIFT = VOLLGAS. RUNTER = BREMSE. SPRUNG = SPRINGEN (ZWEIMAL).';
-    else if (l.mode === 'downhill') h = 'SHIFT = TRETEN. RUNTER = BREMSEN. SPRUNG = HOPSEN, IN DER LUFT SALTO.';
+    else if (l.mode === 'fahrt') h = 'W = GAS. SHIFT = NITRO. KURVE: RUNTER + LENKEN = DRIFT. SPRUNG ZWEIMAL, IN DER LUFT SHIFT = SCHRAUBE.';
+    else if (l.mode === 'downhill') h = 'SHIFT = TRETEN. SPRUNG = HOPSEN, IN DER LUFT SALTO. RUNTER IN DER LUFT = BARSPIN. W = KLINGEL.';
     else if (l.mode === 'doener') h = 'PFEILE + SPRUNG = BELEGEN. RUNTER = WICKELN UND ESSEN.';
     else if (l.mode === 'pizza') h = 'PFEILE + SPRUNG = BELEGEN. RUNTER = OFEN. SPRUNG = RAUSHOLEN.';
     else if (l.mode === 'flug') h = 'SPRUNG = STEIGEN. RUNTER = SINKEN. LINKS / RECHTS = TEMPO.';
@@ -4952,6 +5177,8 @@
     else if (l.bike) h = 'RECHTS = TRETEN, LINKS = BREMSEN. IN DER LUFT SPRUNG = SALTO.';
     else if (l.airsoft) h = 'SHIFT / E = BBS. HALTEN = DAUERFEUER. NACHLADEN GEHT VON ALLEIN.';
     else if (l.punch) h = 'SHIFT / E = FAUST. HAUT AUCH KISTEN KAPUTT.';
+    else if (G.player && G.player.waffe && !l.mode) h = 'SHIFT / E = SCHLAGEN, DREIMAL = KOMBO. IN DER LUFT RUNTER + SCHLAG = STICH.';
+    else if (!l.mode) h = 'BEIM LAUFEN RUNTER = BAUCHRUTSCHER. DABEI SPRUNG = WEITSPRUNG.';
     if (h && G.touch) {
       h = h.replace('SHIFT / E', 'B').replace('C ODER SPRUNG', 'B ODER TIPPEN').replace('MIT DER MAUS', 'MIT DEM FINGER')
            .replace('RUNTER', 'PFEIL RUNTER');

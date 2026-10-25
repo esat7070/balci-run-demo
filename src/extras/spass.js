@@ -145,7 +145,11 @@
   function laden(G, respawn) {
     G.hitstop = 0; G.squash = 0; G.warBoden = true; G.letzteVy = 0;
     G.letzterBoden = null;
-    if (!respawn) { G.levelTode = 0; G.levelZaehler = (G.levelZaehler || 0) + 1; }
+    G.rennT = 0;
+    if (!respawn) {
+      G.levelTode = 0; G.levelZaehler = (G.levelZaehler || 0) + 1;
+      G.rutschTipp = false; G.weitTipp = false; G.weitN = 0;
+    }
     var gr = G.graeber[G.lvlIndex];
     if (gr) gr.forEach(function (x) { x.gesagt = false; });
     // Nach einem Tod im Bosskampf: wie knapp war es? (wie bei Cuphead)
@@ -186,6 +190,18 @@
     }
     G.warBoden = p.grounded;
     G.letzteVy = p.vy;
+
+    // Tipp Bauchrutscher: wer eine Weile laeuft und ihn noch nie benutzt
+    // hat, liest einmal pro Level, wie es geht (nicht im Bosskampf)
+    var tipps = (save && save.tipps) || 0;
+    if (zuFuss && !(tipps & 1) && !G.rutschTipp && !G.frozen && !(G.boss && G.bossStarted) &&
+        p.grounded && Math.abs(p.vx) > 1.9 && !p.rutsch) G.rennT = (G.rennT || 0) + 1;
+    else if (!p.grounded || Math.abs(p.vx) < 0.5) G.rennT = 0;
+    if (G.rennT >= 100 && !G.rutschTipp) {
+      G.rutschTipp = true;
+      G.toasts.push({ art: 'text', zeile1: 'TIPP: BEIM LAUFEN RUNTER DRÜCKEN',
+                      zeile2: 'BAUCHRUTSCHER! KOSTET ETWAS PUSTE.', col: '#ffd257', zeit: 200 });
+    }
 
     // Aura-Farming: eine Weile cool rumstehen. Danach schlaeft er ja doch ein.
     if (p.idle === 150 && !p.sleeping && zuFuss) {
@@ -244,6 +260,31 @@
   function gold(G) {
     var p = G.player;
     aura(G, 300, p.cx(), p.y - 44);
+  }
+
+  /** Bauchrutscher: das erste Mal merken und den Weitsprung erklaeren. */
+  function rutsch(G) {
+    var p = G.player;
+    if (!save) return;
+    var tipps = save.tipps || 0;
+    if (!(tipps & 1)) {
+      save.tipps = tipps | 1;
+      if (persist) persist();
+      G.floats.add(p.cx(), p.y - 14, 'BAUCHRUTSCHER!', '#ffd257', 70);
+    }
+    if (!(save.tipps & 2) && !G.weitTipp) {
+      G.weitTipp = true;
+      G.toasts.push({ art: 'text', zeile1: 'TIPP: IM RUTSCHEN SPRINGEN',
+                      zeile2: '= BAUCH-WEITSPRUNG. FLACH UND WEIT.', col: '#ffd257', zeit: 200 });
+    }
+  }
+
+  /** Bauch-Weitsprung: ein bisschen Aura, die ersten Male mit Namen. */
+  function weitsprung(G) {
+    var p = G.player;
+    aura(G, 25);
+    if (save && !((save.tipps || 0) & 2)) { save.tipps = (save.tipps || 0) | 2; if (persist) persist(); }
+    if ((G.weitN = (G.weitN || 0) + 1) <= 3) G.floats.add(p.cx(), p.y - 16, 'BAUCH-WEITSPRUNG!', '#ffd257', 60);
   }
 
   function salto(G, flips) {
@@ -573,6 +614,7 @@
     init: init, laden: laden, tick: tick, immer: immer,
     neuerDurchgang: function (G) { G.stats = neueStats(); },
     gegnerWeg: gegnerWeg, bossTreffer: bossTreffer, gold: gold, salto: salto,
+    rutsch: rutsch, weitsprung: weitsprung,
     tod: tod, gameOver: gameOver, levelFertig: levelFertig, bewerten: bewerten,
     trophaee: trophaee, anzahl: anzahl, gesamt: TROPH.length, hat: function (id) { return !!trophaeen[id]; },
     form: form, drawWelt: drawWelt, drawOben: drawOben, hud: hud, drawRang: drawRang, karte: karte,

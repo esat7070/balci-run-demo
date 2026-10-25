@@ -30,6 +30,7 @@
   var STAM_REGEN = SP.PUSTE_PRO_TICK;
   var POUND_BOSS_DMG = SP.STAMPFER_BOSS;   // Arschbombe auf Bosse: halber Schaden
   var SLEEP_AFTER = SP.EINSCHLAFEN_NACH;   // nichts tun -> Yusuf pennt
+  var STEH_H = 26;                         // so gross ist Yusuf im Stehen
 
   // Level 21: die Leih-Airsoft
   var MAGAZIN = AS.MAGAZIN;       // BBs pro Magazin
@@ -264,6 +265,16 @@
            a.y < b.y + b.h && a.y + a.h > b.y;
   }
 
+  /** Ist dieses Rechteck (Pixel) frei von festen Kacheln? */
+  function frei(world, x, y, w, h) {
+    var x0 = Math.floor(x / T), x1 = Math.floor((x + w - 1) / T);
+    var y0 = Math.floor(y / T), y1 = Math.floor((y + h - 1) / T);
+    for (var ty = y0; ty <= y1; ty++) {
+      for (var tx = x0; tx <= x1; tx++) if (world.solid(tx, ty)) return false;
+    }
+    return true;
+  }
+
   /* ================= Partikel ================= */
 
   function Particles() { this.list = []; }
@@ -353,7 +364,13 @@
 
   Player.prototype.reset = function (x, y) {
     this.x = x; this.y = y;
+    this.h = STEH_H;
     this.vx = 0; this.vy = 0;
+    this.rutsch = 0;         // > 0: Bauchrutscher laeuft (Ticks)
+    this.liegt = false;      // Rutschen vorbei, aber oben ist kein Platz: er robbt
+    this.rutschHalt = false; // RUNTER seit dem Rutschen noch gehalten (kein Stampfer)
+    this.weit = false;       // Bauch-Weitsprung in der Luft
+    this.weitV = 0;
     this.facing = 1;
     this.grounded = false;
     this.coyote = 0; this.buffer = 0;
@@ -382,6 +399,11 @@
     this.smokeCool = 0;
     this.punchT = 0;         // Level 19: Faust gerade vorn
     this.punchCool = 0;
+    // Waffen (waffen.js). this.waffe selbst bleibt nach einem Tod (game.js loadLevel)
+    this.schlag = null; this.schlagT = 0;
+    this.komboN = 0; this.komboT = 0; this.puffer = 0;
+    this.schubT = 0; this.schubV = 0;
+    this.bombeWunsch = 0; this.keineBombeT = 0; this.waffeTextT = 0; this.pogoT = 0;
     this.mag = MAGAZIN;      // Level 21: BBs im Magazin
     this.reload = 0;         // > 0: es wird nachgeladen
     this.bbCool = 0;
@@ -438,10 +460,14 @@
     var wantJump = !frozen && !auto && In.hit('jump');
     var holdJump = !frozen && !auto && In.down('jump');
     var wantDown = !frozen && !auto && In.down('down');
+    // STRG oder C = Arschbombe (nur in der Luft; am Boden kein Bauchrutscher)
+    var wantStampf = !frozen && !auto && In.down('stampf');
     var running = !frozen && !auto && In.down('run');
 
-    /* --- Kippe werfen (nur mit Päckchen) --- */
-    if (!frozen && !auto && this.smoke && this.smokeCool === 0 && In.hit('throw')) {
+    /* --- Kippe werfen (nur mit Päckchen). Mit einer Waffe in der Hand fliegt
+           sie bei jedem Schlag mit (wie der Schwertstrahl bei Zelda). --- */
+    if (!frozen && !auto && this.smoke && this.smokeCool === 0 && In.hit('throw') &&
+        !(this.waffe && (this.rutsch > 0 || this.liegt || this.weit))) {
       this.smokeCool = 20;
       g.addProjectile('kippe', this.cx() + this.facing * 9, this.y + 11,
                       this.facing * 4.3, -1.7, true);
@@ -463,6 +489,9 @@
                       this.y + 5, 0, 0, true);
       global.Sound.play('flick');
     }
+
+    /* --- Waffe (Nunchaku, Messer, Schwert, Saebel): waffen.js --- */
+    if (this.waffe && global.Waffen) global.Waffen.update(g, this, frozen, auto);
 
     /* --- Airsoft (Level 21): die Leihwaffe schiesst BBs ---
        Antippen = ein Schuss, Taste halten = Dauerfeuer (etwas langsamer).
@@ -520,6 +549,26 @@
       }
     }
 
+    /* --- Bauchrutscher ---
+       Beim Laufen RUNTER antippen: Yusuf wirft sich auf den Bauch und
+       rutscht flach weiter. Nicht auf dem Fahrrad, nicht in Szenen. */
+    if (!wantDown) this.rutschHalt = false;
+    if ((this.rutsch > 0 || this.liegt) && (frozen || auto || bike)) this.aufstehen(g);
+    if (this.rutsch > 0 && !this.grounded) {
+      // Ueber die Kante gerutscht: mit dem ganzen Schwung weiterfliegen
+      this.weit = true; this.weitV = Math.abs(this.vx);
+      this.aufstehen(g);
+    }
+    if (!frozen && !auto && !bike && this.grounded && this.rutsch === 0 && !this.liegt && !this.schlag &&
+        this.pound === 0 && In.hit('down') && Math.abs(this.vx) >= SP.RUTSCH_AB) {
+      if (this.stamina >= SP.RUTSCH_KOSTET) this.rutschStart(g);
+      else if (this.pustT <= 0) {
+        this.pustT = 40;
+        global.Sound.play('move');
+        g.floats.add(this.cx(), this.y - 6, 'KEINE PUSTE MEHR!', '#c8c0d8', 45);
+      }
+    }
+
     /* --- Horizontal --- */
     var maxS = running ? MAX_RUN : MAX_WALK;
     if (this.power > 0) maxS += 0.5;
@@ -538,7 +587,35 @@
       ax *= 0.35;
       if (this.grounded) this.vx *= 0.995;
     }
-    if (bike) {
+    // Im Rutschen und im Weitsprung darf er schneller sein als beim Rennen
+    if (this.rutsch > 0) maxS = Math.max(maxS, SP.RUTSCH_MAX);
+    // ... und beim Ausfallschritt mit dem Obstmesser (waffen.js)
+    if (this.schubT > 0) maxS = Math.max(maxS, this.schubV);
+    if (this.weit) {
+      this.weitV = Math.max(MAX_RUN, this.weitV * 0.996);
+      maxS = Math.max(maxS, this.weitV);
+    }
+    if (this.rutsch > 0) {
+      // Rutschen: kaum Reibung, die Gegenrichtung bremst
+      var gegen = ax !== 0 && (ax > 0) !== (this.facing > 0);
+      this.vx *= gegen ? 0.9 : SP.RUTSCH_BREMSE;
+      this.rutsch--;
+      if (this.grounded && g.tick % 2 === 0) {
+        g.particles.spawn({ x: this.cx() - this.facing * 8, y: this.feet() - 1,
+                            vx: -this.facing * (0.4 + Math.random() * 0.6), vy: -Math.random() * 0.9,
+                            life: 14, col: staubFarbe(g), size: 2, grav: 0.08 });
+      }
+      if (this.rutsch === 0 || Math.abs(this.vx) < 1.1) this.aufstehen(g);
+    } else if (this.liegt) {
+      // Unter einer niedrigen Decke: robben, bis oben wieder Platz ist
+      if (ax !== 0) this.facing = ax > 0 ? 1 : -1;
+      this.vx = (frozen || auto) ? 0 : this.facing * 1.1;
+      this.aufstehen(g);
+    } else if (this.schubT > 0) {
+      // Ausfallschritt: der Stich zieht ihn nach vorn
+      this.schubT--;
+      this.vx = this.facing * this.schubV;
+    } else if (bike) {
       // Fahrrad: Antreten dauert, Bremsen greift kraeftig, und ohne
       // Tasten rollt es einfach weiter — es geht ja bergab.
       if (ax !== 0) {
@@ -555,12 +632,15 @@
       this.facing = ax > 0 ? 1 : -1;
     } else {
       // Besoffen rutscht er nach: Alex hat ihm eine Flasche uebergekippt.
-      this.vx *= this.grounded ? (wankt ? 0.9 : FRIC_GROUND) : FRIC_AIR;
+      // Im Weitsprung bremst die Luft nicht: der Schwung traegt.
+      this.vx *= this.grounded ? (wankt ? 0.9 : FRIC_GROUND) : (this.weit ? 1 : FRIC_AIR);
       if (Math.abs(this.vx) < 0.05) this.vx = 0;
     }
     if (wankt && !this.dead) this.vx += Math.sin(g.tick * 0.043) * 0.085;
     if (this.vx > maxS) this.vx = maxS;
     if (this.vx < -maxS) this.vx = -maxS;
+    // Mitten im Schlag dreht er sich nicht um (die Klinge zeigt, wohin er schlaegt)
+    if (this.schlag) this.facing = this.schlag.dir;
     // Semih schreit RAUS: der Luftstoss schiebt (auch ueber das Tempo hinaus)
     if (g.wind && !frozen) this.vx += g.wind;
 
@@ -571,11 +651,19 @@
       this.stamina = Math.min(this.stamMax, this.stamina + STAM_REGEN);
     }
     if (this.pustT > 0) this.pustT--;
-    if (!bike && this.pound === 0 && !this.grounded && wantDown && this.vy > -3) {
-      if (this.stamina >= POUND_COST) {
+    // (Wer RUNTER vom Rutschen noch haelt und ueber eine Kante rutscht,
+    // stampft nicht aus Versehen.)
+    if (!bike && this.pound === 0 && !this.grounded && (wantDown || wantStampf) && this.vy > -3 &&
+        (!this.rutschHalt || wantStampf) && this.rutsch === 0 && !this.liegt) {
+      if (this.waffe) {
+        // Mit Messer, Schwert oder Nunchaku in der Hand: KEINE Arschbombe
+        // (Esat, 23.10.). Dafuer RUNTER + Schlag = Abwaertsstich (waffen.js).
+        if (global.Waffen) global.Waffen.keineArschbombe(g, this);
+      } else if (this.stamina >= POUND_COST) {
         this.stamina -= POUND_COST;
         this.pound = POUND_CHARGE;
         this.vy = 0; this.vx = 0;
+        this.weit = false;
         global.Sound.play('select');
       } else if (this.pustT <= 0) {
         this.pustT = 40;
@@ -596,7 +684,13 @@
     else if (this.buffer > 0) this.buffer--;
 
     if (this.buffer > 0 && this.pound >= 0) {
-      if (this.coyote > 0) {
+      if (this.coyote > 0 && (this.rutsch > 0 || this.liegt || this.weit)) {
+        // Sprung im Rutschen (oder gleich nachdem er ueber eine Kante
+        // gerutscht ist): Bauch-Weitsprung. Unter einer niedrigen Decke
+        // geht das nicht, da robbt er weiter.
+        if (this.aufstehen(g)) this.weitsprung(g);
+        else this.buffer = 0;
+      } else if (this.coyote > 0) {
         this.vy = bike ? BIKE_HOP : (this.stick > 0 ? JUMP_V * 0.72 : JUMP_V);
         this.grounded = false; this.coyote = 0;
         this.jumpsLeft = 1; this.buffer = 0;
@@ -627,13 +721,19 @@
     }
     // Sprung abschneiden, wenn losgelassen. Nicht nach einer Rampe:
     // dort hat niemand die Taste gedrueckt, und der Flug waere sofort weg.
-    if (!holdJump && this.vy < -2.5 && this.pound >= 0 && !this.kicked) this.vy *= 0.52;
+    // Der Weitsprung ist immer gleich weit (wie bei Mario 64).
+    // Auch nicht nach dem Abwaertsstich (pogoT, waffen.js): da haelt man RUNTER, nicht Sprung.
+    if (!holdJump && this.vy < -2.5 && this.pound >= 0 && !this.kicked && !this.weit && !(this.pogoT > 0)) this.vy *= 0.52;
     this.jumpHeld = holdJump;
 
-    /* --- Schwerkraft --- (im Kosmos bei Semih: fast schwerelos) */
+    /* --- Schwerkraft --- (im Kosmos bei Semih: fast schwerelos)
+       Am hoechsten Punkt eines Sprungs (Taste gehalten) zieht sie kurz
+       weniger: Yusuf haengt einen Moment in der Luft, man kann nachlenken. */
     if (this.pound === 0) {
       var schwere = g.schwere || 1;
-      this.vy += GRAV * schwere;
+      var zug = GRAV * schwere;
+      if (holdJump && !bike && !this.grounded && Math.abs(this.vy) < SP.SCHEITEL_VY) zug *= SP.SCHEITEL;
+      this.vy += zug;
       if (this.vy > MAX_FALL * Math.min(1, schwere + 0.25)) this.vy = MAX_FALL * Math.min(1, schwere + 0.25);
     } else if (this.pound === -1) {
       this.vy = POUND_SPEED;
@@ -657,9 +757,16 @@
     var prevCx = this.cx();
     this.landTile = null; this.headTile = null; this.wallTile = null;
 
-    moveX(this, world, this.vx);
+    // Knapp zu tief an einer Kante: hochziehen statt abrutschen
+    if (!bike && !wasGrounded && this.pound === 0 && this.vx !== 0 && this.vy > -2 &&
+        this.rutsch === 0 && !this.liegt) this.kanteHoch(world);
+    var vxVor = this.vx;
+    var hitX = moveX(this, world, this.vx);
+    if (hitX !== 0 && this.rutsch > 0) this.rutschWand(g, vxVor);
 
     this.grounded = false;
+    // Kopf knapp an einer Kante: daran vorbei
+    if (this.vy < 0 && !bike && this.pound === 0) this.eckeVorbei(world);
     var hitY = moveY(this, world, this.vy);
     if (hitY === 1) this.grounded = true;
     if (hitY === -1 && this.headTile) this.bumpBlock(g, this.headTile);
@@ -669,6 +776,12 @@
 
     /* --- Landung --- */
     if (this.grounded && !wasGrounded) {
+      if (this.weit) {
+        // Bauchlandung nach dem Weitsprung: Staub nach vorn
+        this.weit = false;
+        g.particles.burst(this.cx() + this.facing * 4, this.feet(), 8,
+          { col: staubFarbe(g), spread: 1.8, up: 0.3, life: 16, grav: 0.12 });
+      }
       if (bike) this.bikeLand(g);
       if (this.pound === -1) {
         this.pound = 0;
@@ -762,6 +875,101 @@
         this.x += m.dx;
         if (m.dy < 0) this.y += m.dy;
       }
+    }
+  };
+
+  /* ---------- Bauchrutscher und Bauch-Weitsprung ---------- */
+
+  /** Auf den Bauch: flach, schnell, kostet Puste. */
+  Player.prototype.rutschStart = function (g) {
+    this.stamina -= SP.RUTSCH_KOSTET;
+    this.facing = this.vx > 0 ? 1 : -1;
+    var v = Math.min(SP.RUTSCH_MAX, Math.max(SP.RUTSCH_TEMPO, Math.abs(this.vx) + 1.3));
+    this.vx = this.facing * v;
+    // Flach hinlegen: die Fuesse bleiben, wo sie sind
+    this.y += this.h - SP.RUTSCH_HOEHE;
+    this.h = SP.RUTSCH_HOEHE;
+    this.rutsch = SP.RUTSCH_DAUER;
+    this.rutschHalt = true;
+    this.sleeping = false; this.idle = 0;
+    this.laughTimer = Math.max(this.laughTimer, 24);
+    global.Sound.play('rutsch');
+    g.particles.burst(this.cx() - this.facing * 6, this.feet(), 7,
+      { col: staubFarbe(g), spread: 1.8, up: 0.5, life: 18, grav: 0.12 });
+    if (g.onRutsch) g.onRutsch();
+  };
+
+  /** Wieder hinstellen, wenn oben Platz ist. Sonst robbt er weiter
+      (this.liegt) und versucht es im naechsten Tick nochmal. */
+  Player.prototype.aufstehen = function (g) {
+    this.rutsch = 0;
+    if (this.h === STEH_H) { this.liegt = false; return true; }
+    var dh = STEH_H - this.h;
+    if (!frei(g.world, this.x, this.y - dh, this.w, STEH_H)) { this.liegt = true; return false; }
+    this.y -= dh;
+    this.h = STEH_H;
+    this.liegt = false;
+    return true;
+  };
+
+  /** Sprung aus dem Rutschen: flacher als normal, aber schnell und weit. */
+  Player.prototype.weitsprung = function (g) {
+    var v = Math.max(Math.abs(this.vx), SP.WEIT_TEMPO);
+    this.vx = this.facing * v;
+    this.vy = SP.WEIT_V;
+    this.weit = true; this.weitV = v;
+    this.grounded = false; this.coyote = 0;
+    this.jumpsLeft = 1; this.buffer = 0;
+    this.laughTimer = 40;
+    global.Sound.play('weit');
+    g.particles.burst(this.cx() - this.facing * 4, this.feet(), 9,
+      { col: staubFarbe(g), spread: 2, up: 0.3, life: 18, grav: 0.1 });
+    if (g.onWeitsprung) g.onWeitsprung();
+  };
+
+  /** Im Rutschen gegen etwas gestossen: Kisten gehen kaputt, Waende nicht. */
+  Player.prototype.rutschWand = function (g, vxVor) {
+    var wt = this.wallTile, b = wt ? g.world.blockAt(wt[0], wt[1]) : null;
+    if (b && !b.dead && b.type === 'kiste') {
+      this.breakCrate(g, b);
+      this.vx = vxVor * 0.85;
+      g.shake(2, 5);
+      return;
+    }
+    // Wand: mit dem Bauch dagegen, kurz zurueck, aufstehen
+    this.vx = -this.facing * 0.8;
+    global.Sound.play('land');
+    g.shake(2, 4);
+    this.aufstehen(g);
+  };
+
+  /** Kanten-Hilfe: Fehlen beim Sprung auf eine Kante nur ein paar Pixel,
+      zieht Yusuf sich hoch, statt an der Wand herunterzurutschen. */
+  Player.prototype.kanteHoch = function (world) {
+    var nx = this.x + this.vx;
+    if (frei(world, nx, this.y, this.w, this.h)) return;
+    var fuss = this.y + this.h;
+    var hoch = fuss - Math.floor((fuss - 1) / T) * T;   // so tief stecken die Fuesse unter der Kante
+    if (hoch <= 0 || hoch > SP.KANTE) return;
+    if (!frei(world, nx, this.y - hoch, this.w, this.h)) return;
+    this.y -= hoch;
+  };
+
+  /** Ecken-Korrektur: Stoesst der Kopf nur mit ein paar Pixeln an eine
+      Kante, rutscht Yusuf daran vorbei (wie bei Celeste und Mario).
+      Nicht an ?-Bloecken und Kisten — die will man ja treffen. */
+  Player.prototype.eckeVorbei = function (world) {
+    var ny = this.y + this.vy;
+    if (frei(world, this.x, ny, this.w, 1)) return;
+    var ty = Math.floor(ny / T);
+    var x0 = Math.floor(this.x / T), x1 = Math.floor((this.x + this.w - 1) / T);
+    for (var tx = x0; tx <= x1; tx++) {
+      var b = world.blockAt(tx, ty);
+      if (b && !b.dead) return;
+    }
+    for (var d = 1; d <= SP.ECKE; d++) {
+      if (frei(world, this.x - d, ny, this.w, this.h)) { this.x -= d; return; }
+      if (frei(world, this.x + d, ny, this.w, this.h)) { this.x += d; return; }
     }
   };
 
@@ -912,6 +1120,9 @@
     if (g.boss && g.boss.dead && !g.bossCleared) return;
     // Wer getroffen wird, dreht keinen Salto mehr zu Ende
     this.flipping = false; this.flipA = 0; this.flipsAir = 0;
+    // ... und rutscht und fliegt nicht weiter
+    this.weit = false;
+    if (this.rutsch > 0) this.aufstehen(g);
 
     // Mit Kippen im Sack kostet ein Treffer nur das Päckchen, kein Herz.
     if (this.smoke) {
@@ -938,6 +1149,7 @@
     this.hurtTimer = 40;
     this.sleeping = false;
     this.pound = 0;
+    this.schlag = null; this.schlagT = 0; this.komboN = 0; this.komboT = 0; this.schubT = 0;
     var dir = (fromX !== undefined && fromX > this.cx()) ? -1 : 1;
     this.vx = dir * 3.1;
     this.vy = -4.2;
@@ -1003,6 +1215,8 @@
     if (this.won || this.cheer > 0) return { pose: 'cheer', face: 'laugh' };
     if (this.sleeping) return { pose: 'sleep', face: 'sleep' };
     if (this.punchT > 0) return { pose: 'punch', face: 'growl' };
+    // Mitten im Schlag mit der Waffe: Arm und Klinge (waffen.js)
+    if (this.schlag && global.Waffen) { var wp = global.Waffen.pose(this); if (wp) return wp; }
     var face = 'normal';
     if (this.growlTimer > 0) face = 'growl';
     else if (this.hurtTimer > 0) face = 'hurt';
@@ -1010,6 +1224,10 @@
     else if (this.laughTimer > 0) face = 'laugh';
     else if (this.smoke) face = 'smoke';
 
+    // Bauchrutscher und Weitsprung: flach wie Superman (game.js dreht die Figur)
+    if (this.rutsch > 0 || this.liegt || (this.weit && !this.grounded && this.pound === 0)) {
+      return { pose: 'rutsch', face: face === 'normal' ? 'laugh' : face };
+    }
     if (this.pound > 0) return { pose: 'duck', face: face };
     if (this.pound === -1) return { pose: 'pound', face: face };
     if (!this.grounded) return { pose: this.vy < 0 ? 'jump' : 'fall', face: face };
@@ -1170,9 +1388,12 @@
 
     // Kontakt mit Yusuf
     if (overlap(this, p) && !p.dead) {
-      // Auf dem Fahrrad wird nicht diskutiert.
-      if (p.power > 0 || p.pound === -1 || (g.lvl && g.lvl.bike)) {
+      // Auf dem Fahrrad wird nicht diskutiert. Beim Bauchrutscher auch nicht.
+      if (p.power > 0 || p.pound === -1 || p.rutsch > 0 || (g.lvl && g.lvl.bike)) {
+        // g.rutscher: wer jetzt umfaellt, fiel durch den Bauchrutscher (Auftraege)
+        g.rutscher = p.rutsch > 0 && p.power <= 0 && p.pound !== -1;
         this.squash(g, p);
+        g.rutscher = false;
       } else if (p.vy > 0.8 && p.feet() - this.y < 14) {
         this.stomped(g, p);
       } else {
@@ -1515,6 +1736,16 @@
       p.score += bonus;
       g.floats.add(this.cx(), this.y - 20, 'COMBO x' + g.combo + '  +' + bonus,
                    '#ff9ec4', 60);
+      // Jeder Gegner in der Kette klingt einen Ton hoeher (wie bei Mario) ...
+      global.Sound.play('kette', g.combo - 2);
+      // ... und eine lange Kette gibt ein Extraleben
+      var ab = SP.KETTE_LEBEN, alle = SP.KETTE_LEBEN_ALLE;
+      if (g.combo >= ab && (g.combo - ab) % alle === 0) {
+        p.lives++;
+        global.Sound.play('oneUp');
+        g.floats.add(p.cx(), p.y - 30, 'COMBO x' + g.combo + ': EXTRALEBEN!', '#ffd257', 100);
+        g.particles.burst(p.cx(), p.y + 6, 18, { col: '#ffd257', spread: 3, up: 1.2, life: 30 });
+      }
     }
     if (g.onEnemyKill) g.onEnemyKill(this);   // Hit-Stop, Aura, Trophaeen (spass.js)
   };
@@ -1536,7 +1767,13 @@
     // Level 24-28: Brezel vom Flughafenbaecker, Simit, Fischbrot
     brezel: { w: 12, h: 9, spr: 'brezel' },
     simit: { w: 12, h: 11, spr: 'simit' },
-    balik: { w: 16, h: 9, spr: 'balik' }
+    balik: { w: 16, h: 9, spr: 'balik' },
+    // Waffen (waffen.js): liegen da, wo sie zur Geschichte passen
+    waffe_nunchaku: { w: 16, h: 16, spr: 'waffe_nunchaku', waffe: 'nunchaku' },
+    waffe_shawarma: { w: 16, h: 16, spr: 'waffe_shawarma', waffe: 'shawarma' },
+    waffe_messer: { w: 16, h: 16, spr: 'waffe_messer', waffe: 'messer' },
+    waffe_schwert: { w: 16, h: 16, spr: 'waffe_schwert', waffe: 'schwert' },
+    waffe_saebel: { w: 16, h: 16, spr: 'waffe_saebel', waffe: 'saebel' }
   };
 
   var FRESSBAR = { shawarma: 1, souvlaki: 1, doener: 1, kubide: 1, baklava: 1, gold: 1, boerek: 1,
@@ -1554,6 +1791,7 @@
     this.t = type;
     this.w = d.w; this.h = d.h;
     this.spr = d.spr;
+    if (d.waffe) this.waffe = d.waffe;
     this.x = x - d.w / 2; this.y = y - d.h / 2;
     this.oy = this.y;
     this.t0 = (Math.random() * 100) | 0;
@@ -1582,6 +1820,19 @@
     if (this.vollT > 0) this.vollT--;
 
     var p = g.player;
+    // Honig-Magnet: was knapp neben Yusuf haengt, fliegt ihm zu
+    if (this.t === 'honig' && this.settle === 1 && !p.dead && SP.MAGNET > 0) {
+      var mx = p.cx() - (this.x + this.w / 2), my = (p.y + p.h / 2) - (this.oy + this.h / 2);
+      var md = Math.sqrt(mx * mx + my * my);
+      // (nicht durch Waende: die Mitte dazwischen muss frei sein)
+      if (md < SP.MAGNET && !g.world.solid(Math.floor((this.x + this.w / 2 + mx / 2) / T),
+                                           Math.floor((this.oy + this.h / 2 + my / 2) / T))) this.zieht = true;
+      if (this.zieht && md > 0.5) {
+        var mv = Math.min(md, 3.4);
+        this.x += mx / md * mv;
+        this.oy += my / md * mv;
+      }
+    }
     if (p.dead || !overlap(this, p)) return;
     if (HEILT_NUR[this.t] && p.hp >= p.maxHp) {
       // Volle Herzen: liegen lassen. Einmal sagen, warum.
@@ -1613,10 +1864,24 @@
         spr: [this.spr], n: 4, tempo: 2, gross: 0.75, haende: false
       });
     }
+    if (this.waffe) { if (global.Waffen) global.Waffen.aufheben(g, p, this.waffe); return; }
     switch (this.t) {
       case 'honig':
         var leben = p.honigDazu(); p.score += 50;
-        global.Sound.play('honey', p.honey % 13);
+        // Honigkette: Glaeser kurz nacheinander klingen immer hoeher,
+        // zehn am Stueck geben einen Bonus
+        var tk = g.tick || 0;
+        if (g.honigT !== undefined && tk - g.honigT >= 0 && tk - g.honigT <= SP.HONIGKETTE_ABSTAND) g.honigKette = (g.honigKette || 0) + 1;
+        else g.honigKette = 0;
+        g.honigT = tk;
+        global.Sound.play('honey', Math.min(12, g.honigKette));
+        if (g.honigKette + 1 === SP.HONIGKETTE) {
+          p.score += 500;
+          p.laughTimer = 40;
+          global.Sound.play('kette', 8);
+          g.floats.add(p.cx(), p.y - 22, 'HONIGKETTE! +500', '#ffd257', 80);
+          g.particles.burst(p.cx(), p.y + 6, 14, { col: '#ffc23c', spread: 2.6, up: 1.2, life: 28 });
+        }
         g.particles.burst(this.x + this.w / 2, this.y + this.h / 2, 6,
           { col: '#ffc23c', spread: 1.8, up: 0.8, life: 20 });
         if (leben) {
@@ -1658,7 +1923,9 @@
         p.smoke = true; p.score += 250; p.laughTimer = 30;
         global.Sound.play('smokePower');
         g.shake(2, 6);
-        g.floats.add(p.cx(), p.y - 12, 'KIPPEN! WERFEN MIT SHIFT / E', '#ffb46a', 130);
+        // Mit Waffe in der Hand fliegt bei jedem Schlag eine Kippe mit
+        g.floats.add(p.cx(), p.y - 12, p.waffe ? 'KIPPEN! FLIEGEN BEIM SCHLAGEN MIT.' : 'KIPPEN! WERFEN MIT SHIFT / E',
+                     '#ffb46a', 130);
         g.particles.burst(p.cx(), p.y + 10, 18,
           { col: '#9a9088', spread: 2.4, up: 0.8, life: 44, grav: -0.02 });
         p.doGrowl(g, 'KRRRR... DANKE.');

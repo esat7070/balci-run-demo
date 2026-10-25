@@ -689,6 +689,65 @@
     },
 
     // Endgegner.
+    /* --- Minispiele (shisha.js, tisch.js, kasse.js) --- */
+
+    // Stilbruch, Shisha-Duell: langsam, orientalisch, viel Luft dazwischen
+    shisha: {
+      bpm: 92, duty: 'p50',
+      lead: S(`D5 . . D#5 F#5 . G5 . A5 . . . G5 . F#5 .
+               D#5 . D5 . . . C5 . D5 . . . . . . .
+               A4 . . A#4 C5 . D5 . D#5 . . . D5 . C5 .
+               A#4 . A4 . . . G4 . A4 . . . . . . .`),
+      bass: S(`D2 . . . . . A2 . D2 . . . . . A2 .
+               C2 . . . . . G2 . D2 . . . . . A2 .
+               G2 . . . . . D3 . G2 . . . . . D3 .
+               D2 . . . . . A2 . D2 . . . A1 . . .`),
+      drums: 'K..hS..hK.h.S.hh'
+    },
+
+    // Bei Georgios: ein Tanz aus der Taverne. Faengt gemuetlich an und
+    // wird immer schneller (tisch.js dreht mit Sound.tempo am Tempo).
+    taverne: {
+      bpm: 96, duty: 'p25',
+      lead: S(`A4 . D5 . E5 . F5 . E5 . D5 . C#5 . D5 .
+               E5 . F5 . G5 . A5 . G5 . F5 . E5 . . .
+               A5 . G5 . F5 . E5 . F5 . E5 . D5 . C#5 .
+               D5 . E5 . C#5 . A4 . D5 . . . D5 . . .`),
+      bass: S(`D2 . A2 . D2 . A2 . A1 . A2 . A1 . A2 .
+               A1 . E2 . A1 . E2 . D2 . A2 . D2 . A2 .
+               G1 . D2 . G1 . D2 . A1 . E2 . A1 . E2 .
+               D2 . A2 . A1 . A2 . D2 . A2 . D2 . . .`),
+      drums: 'K.h.S.h.K.h.S.h.'
+    },
+
+    // Kasse 3: Alex zieht durch. Hektisch, aber gut gelaunt.
+    kasse: {
+      bpm: 168, duty: 'p25',
+      lead: S(`C5 . E5 . G5 . C6 . B5 . G5 . E5 . G5 .
+               A5 . F5 . D5 . F5 . A5 . . . G5 . . .
+               C5 . E5 . G5 . C6 . D6 . C6 . B5 . A5 .
+               G5 . E5 . D5 . E5 . C5 . . . . . . .`),
+      bass: S(`C3 . G2 . C3 . G2 . C3 . G2 . C3 . G2 .
+               F2 . C3 . F2 . C3 . G2 . D3 . G2 . D3 .
+               C3 . G2 . C3 . G2 . F2 . C3 . F2 . C3 .
+               G2 . D3 . G2 . D3 . C3 . G2 . C3 . . .`),
+      drums: 'K.hhS.hhK.hhS.hh'
+    },
+
+    // Hamzas Shawarma-Challenge: die Uhr laeuft
+    wettessen: {
+      bpm: 150, duty: 'p125',
+      lead: S(`E5 . E5 . G5 . E5 . B5 . . . A5 . G5 .
+               F#5 . . . D5 . . . E5 . . . . . . .
+               E5 . E5 . G5 . A5 . B5 . D6 . B5 . A5 .
+               G5 . F#5 . E5 . D5 . E5 . . . . . . .`),
+      bass: S(`E2 . E3 . E2 . E3 . E2 . E3 . E2 . E3 .
+               D2 . D3 . D2 . D3 . E2 . E3 . E2 . E3 .
+               C2 . C3 . C2 . C3 . G2 . G3 . G2 . G3 .
+               D2 . D3 . B1 . B2 . E2 . . . E2 . . .`),
+      drums: 'K.hSK.hSK.hSKKhS'
+    },
+
     boss: {
       bpm: 172, duty: 'p125',
       lead: S(`D5 D5 . A4 . D5 . F5 . E5 . D5 . A4 . .
@@ -744,10 +803,26 @@
     if (curName === name) return;
     var song = SONGS[name];
     curName = name;
-    cur = song || null;
+    // Eine Kopie: Sound.tempo darf das Tempo aendern, ohne den Song
+    // fuer das naechste Mal zu verstellen
+    cur = song ? { bpm: song.bpm, duty: song.duty, lead: song.lead, bass: song.bass, drums: song.drums } : null;
     stepIdx = 0;
     nextTime = ctx.currentTime + 0.06;
     if (!timer) timer = setInterval(schedule, 25);
+  }
+
+  /** Tempo des laufenden Songs aendern (Schlaege pro Minute). */
+  function setTempo(bpm) {
+    if (cur && bpm > 20 && bpm < 400) cur.bpm = bpm;
+  }
+
+  /** Wo der Song gerade ist, in Vierteln seit dem Start — oder null, wenn
+      keine Musik hoerbar laeuft (stumm, Browser hat den Ton noch gesperrt).
+      Damit bleiben Spiele im Takt der Musik, auch wenn ein Bild ruckelt. */
+  function taktPos() {
+    if (!cur || !ready || muted || !ctx || ctx.state !== 'running') return null;
+    var stepDur = 60 / cur.bpm / 4;
+    return Math.max(0, (stepIdx - (nextTime - ctx.currentTime) / stepDur) / 4);
   }
 
   function stopMusic() {
@@ -793,6 +868,24 @@
     stomp: function () {
       tone({ wave: 'p125', f0: 620, f1: 160, dur: 0.12, gain: 0.45 });
       noise({ filter: 'bandpass', f0: 1600, f1: 400, dur: 0.1, gain: 0.25 });
+    },
+    // Bauchrutscher: Jeans auf Boden, dazu ein kurzes "Wuuusch"
+    rutsch: function () {
+      noise({ filter: 'bandpass', f0: 2200, f1: 420, dur: 0.32, gain: 0.26, q: 0.8 });
+      tone({ wave: 'p25', f0: 540, f1: 240, dur: 0.18, gain: 0.24 });
+    },
+    // Bauch-Weitsprung: ein langer Aufschwung
+    weit: function () {
+      tone({ wave: 'p50', f0: 240, f1: 900, dur: 0.22, gain: 0.40 });
+      noise({ filter: 'highpass', f0: 2600, dur: 0.12, gain: 0.12 });
+    },
+    // Kette (Gegner ohne Boden, Honigkette): jede Stufe einen Ton hoeher
+    kette: function (n) {
+      if (!ctx) return;
+      var leiter = [0, 2, 4, 5, 7, 9, 11, 12, 14, 16, 17, 19, 21, 23, 24];
+      var f = 523.25 * Math.pow(2, leiter[Math.max(0, Math.min(leiter.length - 1, n || 0))] / 12);
+      tone({ wave: 'p25', f0: f, dur: 0.06, gain: 0.30 });
+      tone({ at: ctx.currentTime + 0.055, wave: 'p25', f0: f * 1.5, dur: 0.11, gain: 0.26 });
     },
     pound: function () {
       noise({ filter: 'lowpass', f0: 2400, f1: 90, dur: 0.22, gain: 0.42 });
@@ -1089,6 +1182,105 @@
     klatsch: function () {
       noise({ filter: 'lowpass', f0: 1400, f1: 300, dur: 0.12, gain: 0.4 });
       tone({ wave: 'sine', f0: 240, f1: 120, dur: 0.1, gain: 0.3 });
+    },
+    /* --- Waffen (waffen.js) --- */
+    // Die Klinge schneidet die Luft. n = Waffe/Kombo-Stufe: jede klingt etwas anders
+    hieb: function (n) {
+      var f = 1 + (n || 0) * 0.11;
+      noise({ filter: 'bandpass', f0: 1200 * f, f1: 3600 * f, dur: 0.12, gain: 0.3, q: 1.3 });
+      tone({ wave: 'p125', f0: 480 * f, f1: 220 * f, dur: 0.08, gain: 0.07 });
+    },
+    // Getroffen: dumpfer Schlag mit hellem Rand
+    treffer: function () {
+      noise({ filter: 'bandpass', f0: 2400, f1: 600, dur: 0.11, gain: 0.38, q: 0.9 });
+      tone({ wave: 'p125', f0: 320, f1: 110, dur: 0.1, gain: 0.32 });
+    },
+    // Metall auf Metall: pariert, Schild, abgeprallt
+    kling: function () {
+      tone({ wave: 'p25', f0: 1980, f1: 1880, dur: 0.24, gain: 0.18 });
+      tone({ wave: 'p50', f0: 2960, f1: 2880, dur: 0.16, gain: 0.09 });
+      noise({ filter: 'highpass', f0: 4200, dur: 0.05, gain: 0.16 });
+    },
+    // Nunchaku dreht: wuff wuff wuff
+    wirbel: function () {
+      noise({ filter: 'bandpass', f0: 800, f1: 1700, dur: 0.1, gain: 0.2, q: 2.2 });
+    },
+    // DAS IST SPARTA: tiefer Tritt
+    sparta: function () {
+      tone({ wave: 'sine', f0: 150, f1: 46, dur: 0.32, gain: 0.65 });
+      noise({ filter: 'lowpass', f0: 1800, f1: 120, dur: 0.26, gain: 0.42 });
+    },
+
+    /* --- Minispiele (shisha.js, tisch.js, kasse.js) --- */
+    // Shisha: das Wasser blubbert, wenn man zieht
+    blubb: function () {
+      var t0 = ctx ? ctx.currentTime : 0;
+      tone({ at: t0, wave: 'sine', f0: 170 + Math.random() * 60, f1: 330, dur: 0.07, gain: 0.22 });
+      tone({ at: t0 + 0.06, wave: 'sine', f0: 210 + Math.random() * 60, f1: 380, dur: 0.06, gain: 0.16 });
+    },
+    // Yusufs Waffe. Tief, lang, mit Nachdruck.
+    ruelps: function () {
+      tone({ wave: 'sawtooth', f0: 98, f1: 62, dur: 0.55, gain: 0.34, vibrato: 23, vibratoDepth: 18 });
+      noise({ filter: 'lowpass', f0: 700, f1: 160, dur: 0.5, gain: 0.22 });
+    },
+    // Husten: zwei kurze, rauhe Stoesse
+    husten: function () {
+      var t0 = ctx ? ctx.currentTime : 0;
+      [0, 0.17].forEach(function (d, i) {
+        noise({ at: t0 + d, filter: 'bandpass', f0: 1100 - i * 200, f1: 500, dur: 0.12, gain: 0.34, q: 0.7 });
+        tone({ at: t0 + d, wave: 'p125', f0: 230 - i * 30, f1: 140, dur: 0.09, gain: 0.12 });
+      });
+    },
+    // Schluck (Ayran, Wasser, Fressrausch)
+    schluck: function () {
+      tone({ wave: 'sine', f0: 320, f1: 130, dur: 0.12, gain: 0.32 });
+    },
+    // Hamzas Kamera: Klick-Klack und der Blitz laedt
+    klick: function () {
+      var t0 = ctx ? ctx.currentTime : 0;
+      noise({ at: t0, filter: 'highpass', f0: 3000, dur: 0.03, gain: 0.3 });
+      noise({ at: t0 + 0.07, filter: 'highpass', f0: 2200, dur: 0.04, gain: 0.26 });
+      tone({ at: t0 + 0.1, wave: 'sine', f0: 900, f1: 3200, dur: 0.4, gain: 0.07 });
+    },
+    // Eine Moewe. Kia! Kia!
+    moewe: function () {
+      var t0 = ctx ? ctx.currentTime : 0;
+      [0, 0.16].forEach(function (d) {
+        tone({ at: t0 + d, wave: 'p25', f0: 1500, f1: 980, dur: 0.13, gain: 0.16, vibrato: 30, vibratoDepth: 40 });
+      });
+    },
+    // Moewe verscheucht: Fluegelschlagen
+    husch: function () {
+      noise({ filter: 'bandpass', f0: 600, f1: 1800, dur: 0.22, gain: 0.3, q: 1.2 });
+      tone({ wave: 'p25', f0: 700, f1: 1400, dur: 0.1, gain: 0.12 });
+    },
+    // Der Scanner an der Kasse
+    scan: function () {
+      tone({ wave: 'p50', f0: 2240, dur: 0.07, gain: 0.16 });
+    },
+    // Zerdrueckt: Chips, Eier, Toast
+    knirsch: function () {
+      noise({ filter: 'bandpass', f0: 2600, f1: 500, dur: 0.18, gain: 0.36, q: 0.8 });
+      tone({ wave: 'p125', f0: 300, f1: 90, dur: 0.12, gain: 0.18 });
+    },
+    // Etwas faellt in die Tuete
+    plumps: function () {
+      noise({ filter: 'lowpass', f0: 900, f1: 200, dur: 0.07, gain: 0.26 });
+      tone({ wave: 'sine', f0: 180, f1: 110, dur: 0.07, gain: 0.22 });
+    },
+    // Die Leute im Laden: Jubel
+    jubel: function () {
+      if (!init()) return;
+      var t = ctx.currentTime;
+      for (var i = 0; i < 6; i++) {
+        noise({ at: t + i * 0.06, filter: 'bandpass', f0: 900 + Math.random() * 900, dur: 0.18, gain: 0.12, q: 0.6 });
+      }
+      tone({ at: t, wave: 'p25', f0: 660, f1: 990, dur: 0.18, gain: 0.08 });
+    },
+    // ... und enttaeuschtes Raunen
+    raunen: function () {
+      noise({ filter: 'lowpass', f0: 700, f1: 260, dur: 0.5, gain: 0.2 });
+      tone({ wave: 'triangle', f0: 220, f1: 150, dur: 0.45, gain: 0.12 });
     }
   };
 
@@ -1255,6 +1447,10 @@
     play: play,
     music: playMusic,
     stopMusic: stopMusic,
+    tempo: setTempo,
+    taktPos: taktPos,
+    /** Welcher Song gerade laeuft (fuer die Minispiele). */
+    song: function () { return curName; },
     motor: motor,
     isMuted: function () { return muted; },
     setMuted: setMuted,

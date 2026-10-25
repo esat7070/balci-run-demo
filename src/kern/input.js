@@ -10,12 +10,13 @@
      hopp = die echte Sprungtaste (Leertaste, A) — damit W nicht nebenbei
      springt —, nitro = Shift / X / RB. */
   var ACTIONS = ['left', 'right', 'up', 'down', 'jump', 'run', 'throw',
-                 'pause', 'mute', 'confirm', 'back', 'puff', 'gas', 'hopp', 'nitro'];
+                 'pause', 'mute', 'confirm', 'back', 'puff', 'gas', 'hopp', 'nitro', 'stampf', 'dev'];
 
   var KEYMAP = {
     'ArrowLeft': ['left'], 'KeyA': ['left'],
     'ArrowRight': ['right'], 'KeyD': ['right'],
-    'ArrowUp': ['up', 'jump', 'gas'], 'KeyW': ['up', 'jump', 'gas'],
+    // W springt nicht (Esat, 25.10.) — nur im Auto ist es Gas, im Menue hoch
+    'ArrowUp': ['up', 'jump', 'gas'], 'KeyW': ['up', 'gas'],
     'ArrowDown': ['down'], 'KeyS': ['down'],
     'Space': ['jump', 'confirm', 'hopp'],
     'KeyK': ['jump', 'hopp'],
@@ -27,7 +28,8 @@
     'Escape': ['pause', 'back'],
     'KeyP': ['pause'],
     'KeyM': ['mute'],
-    'KeyC': ['puff'],          // Level 14: an der Shisha auspusten
+    'KeyC': ['puff', 'stampf'],        // Arschbombe (und an der Shisha auspusten)
+    'ControlLeft': ['stampf'], 'ControlRight': ['stampf'],
     'Backspace': ['back']
   };
 
@@ -38,7 +40,7 @@
   var STANDARD = KEYMAP;
   var BELEGBAR = {
     left: ['left'], right: ['right'], up: ['up', 'gas'], down: ['down'], jump: ['jump', 'hopp'],
-    throw: ['run', 'throw', 'nitro'], pause: ['pause'], puff: ['puff']
+    throw: ['run', 'throw', 'nitro'], pause: ['pause'], puff: ['puff'], stampf: ['stampf']
   };
   var eigene = {};
   var fangen = null;     // wartet auf die naechste Taste (Einstellungen)
@@ -84,6 +86,7 @@
      und A losliess, lief nicht mehr — und ein eingesteckter Controller hat
      die gehaltene Tastatur losgelassen. */
   var kbCount = {}, touchCount = {}, padOn = {}, tapOn = {};
+  var mausAn = false;     // linke Maustaste gedrueckt (zaehlt als 'throw')
   var keysDown = {};
   // Womit zuletzt gespielt wurde: 'tasten', 'pad' oder 'touch' (fuer die
   // Hinweise auf dem Bildschirm — mit Controller keine Tastatur-Namen)
@@ -95,7 +98,7 @@
   });
 
   function recompute(a) {
-    var v = kbCount[a] > 0 || touchCount[a] > 0 || padOn[a] || tapOn[a] > 0;
+    var v = kbCount[a] > 0 || touchCount[a] > 0 || padOn[a] || tapOn[a] > 0 || (a === 'throw' && mausAn);
     if (v && !held[a]) { pressed[a] = true; anyPressed = true; }
     if (!v && held[a]) released[a] = true;
     held[a] = v;
@@ -120,8 +123,9 @@
     }
     var acts = KEYMAP[e.code];
     if (!acts) return;
-    // Scrollen und Seitensprünge unterdrücken
-    if (e.code === 'Space' || e.code.indexOf('Arrow') === 0) e.preventDefault();
+    // Scrollen und Seitensprünge unterdrücken. Mit STRG (Arschbombe) auch die
+    // Browser-Kuerzel: STRG+D waere sonst ein Lesezeichen, STRG+S Speichern.
+    if (e.code === 'Space' || e.code.indexOf('Arrow') === 0 || e.ctrlKey) e.preventDefault();
     if (e.repeat || keysDown[e.code]) return;
     keysDown[e.code] = true;
     quelle = 'tasten';
@@ -228,10 +232,15 @@
     function down(e) {
       move(e);
       if (!ptr.down) { ptr.down = true; ptr.justDown = true; }
+      // Linke Maustaste im Spiel = schlagen (wie E / Shift, am Controller X)
+      if ((!e.pointerType || e.pointerType === 'mouse') && (e.button === 0 || e.button === undefined) && api.mausAngriff) {
+        mausAn = true; recompute('throw');
+      }
     }
     function up(e) {
       move(e);
       if (ptr.down) { ptr.down = false; ptr.justUp = true; }
+      if (mausAn) { mausAn = false; recompute('throw'); }
     }
     if (global.PointerEvent) {
       canvas.addEventListener('pointerdown', down);
@@ -322,6 +331,7 @@
         jump: btn(p, 0) || btn(p, 1),
         run: btn(p, 2) || btn(p, 5) || btn(p, 7),
         throw: btn(p, 2) || btn(p, 5) || btn(p, 7),
+        stampf: btn(p, 4),
         // Im Auto: RT oder hoch = Gas, A/B = springen, X/RB = Nitro
         gas: btn(p, 7) || stick.up || btn(p, 12),
         hopp: btn(p, 0) || btn(p, 1),
@@ -350,12 +360,13 @@
 
   /** Alles loslassen — z.B. wenn ein Eingabefeld den Fokus bekommt. */
   function releaseAll() {
+    mausAn = false;
     releaseKeyboard();
     Object.keys(touchState).forEach(function (k) { setKey(k, false); });
     ACTIONS.forEach(function (a) { padOn[a] = false; tapOn[a] = 0; recompute(a); });
   }
 
-  global.Input = {
+  var api = global.Input = {
     init: function (canvas) { bindTouch(); bindScreenTap(canvas); bindPointer(canvas); },
     poll: pollPad,
     down: function (a) { return !!held[a]; },
@@ -400,6 +411,13 @@
       var pads = navigator.getGamepads();
       for (var i = 0; i < pads.length; i++) if (pads[i] && pads[i].connected) return true;
       return false;
+    },
+    /** Linke Maustaste = schlagen? game.js setzt das jeden Tick (nur im Spiel). */
+    mausAngriff: false,
+    /** Entwickler-Modus (entwickler.js): P ist dann nicht Pause, sondern die Entwickler-Taste. */
+    devTaste: function (an) {
+      STANDARD.KeyP = an ? ['dev'] : ['pause'];
+      neuBauen();
     },
     /** Die naechste gedrueckte Taste abfangen (fuer das Belegen). */
     naechsteTaste: function (cb) { fangen = cb; releaseKeyboard(); },
