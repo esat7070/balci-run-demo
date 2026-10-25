@@ -320,18 +320,113 @@
 
   /* ================= Fließtexte ================= */
 
+  /* Esat, 25.10.: "die Aura-Texte schoener und dezenter, so dass man sie
+     waehrend dem Spielen lesen kann ... mehr Ausdruecke". Deshalb:
+       - 'WORT!|zusatz' = grosses Wort, darunter klein der Zusatz
+       - ploppt kurz auf, steigt weich, blendet aus
+       - ein leichter dunkler Schatten dahinter (lesbar vor jedem Hintergrund)
+       - nie uebereinander: ein neuer Text weicht nach oben aus
+       - reine Zahlen (+50, +200) klein und ohne Schatten */
   function Floats() { this.list = []; }
   Floats.prototype.add = function (x, y, text, col, life) {
-    var f = { x: x, y: y, text: text, col: col || '#fff3c8', life: life || 60, max: life || 60 };
+    life = life || 60;
+    var haupt = text, sub = null;
+    if (typeof text === 'string' && text.indexOf('|') > 0) {
+      var tr = text.indexOf('|');
+      haupt = text.slice(0, tr); sub = text.slice(tr + 1);
+    }
+    var zahl = typeof haupt === 'string' && /^[+\-][0-9]/.test(haupt) && !sub;
+    // Kurze Ausrufe muessen nicht ewig stehen
+    if (haupt && haupt.length <= 16 && !sub) life = Math.min(life, zahl ? 42 : 70);
+    // Groesse merken (zum Ausweichen)
+    var Fo = global.Font, bw = 40, bh = 12;
+    if (Fo && typeof haupt === 'string') {
+      var zl = Fo.measure(haupt, 1, 1) > 170 ? Math.min(3, Fo.wrap(haupt, 170, 1, 1).length) : 1;
+      bw = Math.min(178, Math.max(Fo.measure(haupt, 1, 1), sub ? Fo.measure(sub, 1, 1) : 0)) + 8;
+      bh = zl * 9 + (sub ? 9 : 0) + 3;
+    }
+    // Nicht auf einen anderen Text drauf: nach oben ausweichen
+    for (var n = 0; n < 6; n++) {
+      var stoss = false;
+      for (var k = 0; k < this.list.length; k++) {
+        var o = this.list[k];
+        if (o.life < 14) continue;
+        if (Math.abs(o.x - x) < (o.bw + bw) / 2 && y < o.y + o.bh && y + bh > o.y) { y = o.y - bh - 2; stoss = true; }
+      }
+      if (!stoss) break;
+    }
+    var f = { x: x, y: y, y0: y, text: haupt, sub: sub, zahl: zahl, col: col || '#fff3c8',
+              life: life, max: life, age: 0, bw: bw, bh: bh };
     this.list.push(f);
+    // Zu viele auf einmal: erst die kleinen Zahlen weg, dann die aeltesten
+    if (this.list.length > 8) {
+      var weg = 0;
+      for (var z = 0; z < this.list.length; z++) if (this.list[z].zahl) { weg = z; break; }
+      this.list.splice(weg, 1);
+    }
     return f;
   };
   Floats.prototype.update = function () {
     for (var i = this.list.length - 1; i >= 0; i--) {
       var f = this.list[i];
-      f.y -= 0.45;
+      f.age = (f.age || 0) + 1;
+      // Weich nach oben: erst schnell, dann fast stehend (zum Lesen)
+      var k = Math.min(1, f.age / 34), steig = f.zahl ? 16 : 13;
+      var y = f.y0 - steig * (1 - (1 - k) * (1 - k) * (1 - k));
+      if (f.life < 18) y -= (18 - f.life) * 0.35;
+      f.y = y;
       if (--f.life <= 0) this.list.splice(i, 1);
     }
+  };
+  /** Alle Texte zeichnen (Welt: camX/camY, Szenen: 0/0). */
+  Floats.prototype.draw = function (ctx, camX, camY, W) {
+    var F = global.Font;
+    if (!F) return;
+    W = W || (ctx.canvas && ctx.canvas.logischW) || 512;
+    var ga = ctx.globalAlpha;
+    for (var i = 0; i < this.list.length; i++) {
+      var f = this.list[i];
+      if (!f.text) continue;
+      var age = f.age || 0;
+      var a = Math.min(1, (age + 1) / 4, f.life / 16);
+      if (a <= 0) continue;
+      var x = f.x - (camX || 0), y = f.y - (camY || 0);
+      // Aufploppen: kurz groesser, dann federnd auf normal
+      var s = 1;
+      if (age < 10) s = 1 + 0.42 * Math.exp(-age / 2.6) * Math.cos(age * 0.75);
+      if (f.zahl) s = 1;
+      var zeilen = F.measure(f.text, 1, 1) > 170 ? F.wrap(f.text, 170, 1, 1).slice(0, 3) : [f.text];
+      var bw = 0;
+      for (var z = 0; z < zeilen.length; z++) bw = Math.max(bw, F.measure(zeilen[z], 1, 1, true));
+      var sw = f.sub ? F.measure(f.sub, 1, 1) : 0;
+      var breite = Math.max(bw, sw) + 8, hoehe = zeilen.length * 9 + (f.sub ? 9 : 0) + 3;
+      // Im Bild bleiben
+      x = Math.max(breite / 2 + 2, Math.min(W - breite / 2 - 2, x));
+      ctx.save();
+      ctx.translate(Math.round(x), Math.round(y));
+      if (s !== 1) ctx.scale(s, s);
+      if (!f.zahl) {
+        ctx.globalAlpha = ga * a * 0.5;
+        ctx.fillStyle = '#08050e';
+        var bx = -Math.round(breite / 2), by = -3;
+        ctx.fillRect(bx + 1, by, breite - 2, hoehe);
+        ctx.fillRect(bx, by + 1, breite, hoehe - 2);
+        // feine Linie in der Farbe des Textes
+        ctx.globalAlpha = ga * a * 0.55;
+        ctx.fillStyle = f.col;
+        ctx.fillRect(bx + 2, by + hoehe - 1, breite - 4, 1);
+      }
+      ctx.globalAlpha = ga * a * (f.zahl ? 0.85 : 1);
+      for (z = 0; z < zeilen.length; z++) {
+        F.draw(ctx, zeilen[z], 0, z * 9, { color: f.col, align: 'center', shadow: true });
+      }
+      if (f.sub) {
+        ctx.globalAlpha = ga * a * 0.8;
+        F.draw(ctx, f.sub, 0, zeilen.length * 9, { color: '#d8d0e8', align: 'center' });
+      }
+      ctx.restore();
+    }
+    ctx.globalAlpha = ga;
   };
 
   /* ================= Spieler ================= */
@@ -368,6 +463,7 @@
     this.vx = 0; this.vy = 0;
     this.rutsch = 0;         // > 0: Bauchrutscher laeuft (Ticks)
     this.liegt = false;      // Rutschen vorbei, aber oben ist kein Platz: er robbt
+    this.robbT = 0;          // gerade hingelegt: so lange erst robben, dann aufstehen
     this.rutschHalt = false; // RUNTER seit dem Rutschen noch gehalten (kein Stampfer)
     this.weit = false;       // Bauch-Weitsprung in der Luft
     this.weitV = 0;
@@ -568,6 +664,23 @@
         g.floats.add(this.cx(), this.y - 6, 'KEINE PUSTE MEHR!', '#c8c0d8', 45);
       }
     }
+    // Langsam vor einer niedrigen Luecke (unterm Bett) und RUNTER: hinlegen
+    // und durchrobben, ohne Anlauf und ohne Puste.
+    // (Esat, 25.10.: "unterm Bett liegt Honig ... ging nicht")
+    if (!frozen && !auto && !bike && this.grounded && this.rutsch === 0 && !this.liegt && !this.schlag &&
+        this.pound === 0 && wantDown && Math.abs(this.vx) < SP.RUTSCH_AB && this.h === STEH_H) {
+      var lDir = ax !== 0 ? (ax > 0 ? 1 : -1) : this.facing;
+      var lx = this.x + lDir * 6, ly = this.y + STEH_H - SP.RUTSCH_HOEHE;
+      if (!frei(g.world, lx, this.y, this.w, STEH_H) && frei(g.world, lx, ly, this.w, SP.RUTSCH_HOEHE)) {
+        this.facing = lDir;
+        this.y = ly;
+        this.h = SP.RUTSCH_HOEHE;
+        this.liegt = true;
+        this.robbT = 14;
+        this.sleeping = false; this.idle = 0;
+        global.Sound.play('rutsch');
+      }
+    }
 
     /* --- Horizontal --- */
     var maxS = running ? MAX_RUN : MAX_WALK;
@@ -610,7 +723,8 @@
       // Unter einer niedrigen Decke: robben, bis oben wieder Platz ist
       if (ax !== 0) this.facing = ax > 0 ? 1 : -1;
       this.vx = (frozen || auto) ? 0 : this.facing * 1.1;
-      this.aufstehen(g);
+      if (this.robbT > 0) this.robbT--;
+      else this.aufstehen(g);
     } else if (this.schubT > 0) {
       // Ausfallschritt: der Stich zieht ihn nach vorn
       this.schubT--;
@@ -822,7 +936,7 @@
             { col: '#c8a070', spread: 2.2, up: 0.8, life: 22 });
           if (!g.kickHint) {
             g.kickHint = true;
-            g.floats.add(this.cx(), this.y - 18, 'JETZT SPRUNG = SALTO!', '#ffd257', 90);
+            g.floats.add(this.cx(), this.y - 18, 'SALTO?|JETZT SPRINGEN', '#ffd257', 90);
           }
           break;
         }
@@ -1055,7 +1169,8 @@
       // WICHTIG: alle Boss-Klassen erwarten hier den Spieler als dritten
       // Wert. Frueher stand hier ein "true" — das hat beim Bauch-Stampfer
       // auf Mirkan, Lennart, Erfan und Esat das Spiel abstuerzen lassen.
-      if (bd < 56 && bdy < 34) g.boss.hit(g, POUND_BOSS_DMG, this);
+      // g.wachArt: wachsam.js weiss so, dass es die Arschbombe war
+      if (bd < 56 && bdy < 34) { g.wachArt = 'bombe'; g.boss.hit(g, POUND_BOSS_DMG, this); g.wachArt = null; }
     }
     for (var s = 0; s < 14; s++) {
       g.particles.spawn({
@@ -1084,7 +1199,7 @@
     this.flipCount = (this.flipCount || 0) + flips;
     this.laughTimer = 40;
     var name = flips === 1 ? 'RÜCKWÄRTSSALTO' : (flips === 2 ? 'DOPPELSALTO' : flips + 'FACH-SALTO');
-    g.floats.add(this.cx(), this.y - 22, name + '! +' + pts, '#ffd257', 80);
+    g.floats.add(this.cx(), this.y - 22, name + '!|+' + pts, '#ffd257', 80);
     global.Sound.play(flips > 1 ? 'oneUp' : 'power');
     g.particles.burst(this.cx(), this.feet() - 6, 12 + flips * 6,
       { col: '#ffd257', spread: 2.8, up: 1.2, life: 30 });
@@ -1259,7 +1374,7 @@
     falafel:  { w: 12, h: 12, spr: ['falafel', 'falafel2'], score: 130, hp: 1 },
     peperoni: { w: 8, h: 14, spr: ['peperoni', 'peperoni2'], score: 120, hp: 1 },
     pita:     { w: 14, h: 9, spr: ['pita', 'pita2'], score: 150, hp: 1, fly: true },
-    // Level 14, Stilbruch: die Typen vom Nebentisch
+    // Level 14, Shishabar: die Typen vom Nebentisch
     typ1:     { w: 11, h: 17, spr: ['typ1', 'typ1b'], score: 160, hp: 1 },
     typ2:     { w: 11, h: 17, spr: ['typ2', 'typ2b'], score: 160, hp: 1 },
     typ3:     { w: 11, h: 17, spr: ['typ3', 'typ3b'], score: 160, hp: 1 },
@@ -1734,7 +1849,7 @@
     if (g.combo >= 2) {
       var bonus = this.def.score * (g.combo - 1);
       p.score += bonus;
-      g.floats.add(this.cx(), this.y - 20, 'COMBO x' + g.combo + '  +' + bonus,
+      g.floats.add(this.cx(), this.y - 20, 'COMBO x' + g.combo + '|+' + bonus,
                    '#ff9ec4', 60);
       // Jeder Gegner in der Kette klingt einen Ton hoeher (wie bei Mario) ...
       global.Sound.play('kette', g.combo - 2);
@@ -1743,7 +1858,7 @@
       if (g.combo >= ab && (g.combo - ab) % alle === 0) {
         p.lives++;
         global.Sound.play('oneUp');
-        g.floats.add(p.cx(), p.y - 30, 'COMBO x' + g.combo + ': EXTRALEBEN!', '#ffd257', 100);
+        g.floats.add(p.cx(), p.y - 30, 'EXTRALEBEN!|COMBO x' + g.combo, '#ffd257', 100);
         g.particles.burst(p.cx(), p.y + 6, 18, { col: '#ffd257', spread: 3, up: 1.2, life: 30 });
       }
     }
@@ -1879,14 +1994,14 @@
           p.score += 500;
           p.laughTimer = 40;
           global.Sound.play('kette', 8);
-          g.floats.add(p.cx(), p.y - 22, 'HONIGKETTE! +500', '#ffd257', 80);
+          g.floats.add(p.cx(), p.y - 22, 'HONIGKETTE!|+500', '#ffd257', 80);
           g.particles.burst(p.cx(), p.y + 6, 14, { col: '#ffc23c', spread: 2.6, up: 1.2, life: 28 });
         }
         g.particles.burst(this.x + this.w / 2, this.y + this.h / 2, 6,
           { col: '#ffc23c', spread: 1.8, up: 0.8, life: 20 });
         if (leben) {
           global.Sound.play('oneUp');
-          g.floats.add(p.cx(), p.y - 14, '100 HONIG = EXTRALEBEN!', '#ffd257', 100);
+          g.floats.add(p.cx(), p.y - 14, 'EXTRALEBEN!|100 HONIG', '#ffd257', 100);
         }
         break;
       case 'goldhonig':
@@ -1895,8 +2010,7 @@
         global.Sound.play('oneUp');
         g.shake(2, 6);
         var got = g.goldCount ? g.goldCount() : 0, all = (g.lvl && g.lvl.gold) || 3;
-        g.floats.add(p.cx(), p.y - 16, 'GOLDHONIG ' + got + '/' + all + '  +1000', '#fff0a0', 100);
-        g.floats.add(p.cx(), p.y - 30, global.Levels.goldLine(got, all), '#ffd257', 110);
+        g.floats.add(p.cx(), p.y - 18, 'GOLDHONIG ' + got + '/' + all + '!|' + global.Levels.goldLine(got, all), '#fff0a0', 120);
         if (g.onGold) g.onGold();
         g.particles.burst(this.x + this.w / 2, this.y + this.h / 2, 22,
           { col: '#fff0a0', spread: 3, up: 1.2, life: 34 });
@@ -1924,7 +2038,7 @@
         global.Sound.play('smokePower');
         g.shake(2, 6);
         // Mit Waffe in der Hand fliegt bei jedem Schlag eine Kippe mit
-        g.floats.add(p.cx(), p.y - 12, p.waffe ? 'KIPPEN! FLIEGEN BEIM SCHLAGEN MIT.' : 'KIPPEN! WERFEN MIT SHIFT / E',
+        g.floats.add(p.cx(), p.y - 12, p.waffe ? 'KIPPEN!|FLIEGEN BEIM SCHLAGEN MIT' : 'KIPPEN!|SHIFT / E = WERFEN',
                      '#ffb46a', 130);
         g.particles.burst(p.cx(), p.y + 10, 18,
           { col: '#9a9088', spread: 2.4, up: 0.8, life: 44, grav: -0.02 });
@@ -1937,18 +2051,18 @@
       case 'baklava':
         p.lives++; p.score += 500; p.eatTimer = 60; p.eatCount++;
         global.Sound.play('oneUp');
-        g.floats.add(p.cx(), p.y - 10, 'EXTRALEBEN! BAKLAVA!', '#ffd257', 95);
+        g.floats.add(p.cx(), p.y - 10, 'BAKLAVA!|+1 LEBEN', '#ffd257', 95);
         break;
       case 'gold':
         if (imBosskampf(g)) {                 // im Bosskampf: nur ein Herz
           p.heal(g, 1); p.score += 300; p.eatTimer = 60;
-          g.floats.add(p.cx(), p.y - 12, 'IM BOSSKAMPF: NUR EIN HERZ', '#ffe38a', 90);
+          g.floats.add(p.cx(), p.y - 12, 'GOLD-DÖNER|IM BOSSKAMPF: +1 HERZ', '#ffe38a', 90);
           break;
         }
         p.power = 560; p.eatTimer = 60; p.laughTimer = 60; p.score += 300;
         global.Sound.play('power');
         g.shake(3, 8);
-        g.floats.add(p.cx(), p.y - 12, 'GOLD-DÖNER! UNAUFHALTSAM!', '#ffe38a', 110);
+        g.floats.add(p.cx(), p.y - 12, 'GOLD-DÖNER!|UNAUFHALTSAM', '#ffe38a', 110);
         g.particles.burst(p.cx(), p.y + 8, 26,
           { col: '#ffd257', spread: 3.4, up: 1.2, life: 34 });
         break;
@@ -2603,7 +2717,7 @@
         g.particles.burst(this.x, this.y, 8, { col: '#ffd257', spread: 2, life: 18 });
       } else {
         if (this.t === 'zettel' && g.player.invuln <= 0) {
-          g.floats.add(g.player.cx(), g.player.y - 22, 'STRAFZETTEL! 35 EURO!', '#f4f4ee', 70);
+          g.floats.add(g.player.cx(), g.player.y - 22, 'STRAFZETTEL!|35 EURO', '#f4f4ee', 70);
         }
         if (this.t === 'mahnung' && g.player.invuln <= 0) {
           g.floats.add(g.player.cx(), g.player.y - 22, 'MAHNUNG ZUGESTELLT.', '#f4f4ee', 60);
@@ -4026,7 +4140,7 @@
       !this.pumped && !R ? { s: 'pushups', t: 76, w: function (l) { return l.weit ? 1 : 0.4; }, dann: function (b) { b.spin = 0; } } : null,
       shakeDarf ? { s: 'shake', t: 140, w: 6, dann: function (b, gg) {
         b.shakeHerz = b.leben;
-        gg.floats.add(b.cx(), b.y - 18, 'SHAKE-PAUSE! (UNTERBRICH IHN!)', '#8cd85a', 90);
+        gg.floats.add(b.cx(), b.y - 18, 'SHAKE-PAUSE!|JETZT ANGREIFEN', '#8cd85a', 90);
       } } : null,
       { s: 'walk', t: 40, w: function (l) { return l.weit ? 1 : 0.2; } },
       R ? { s: 'doubleslam', t: 90, w: function (l) { return l.nah || l.mittel ? 2 : 1; } } : null,

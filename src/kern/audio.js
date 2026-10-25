@@ -649,7 +649,7 @@
                C2 . C2 . C2 . C2 . G1 . G1 . C2 . . .`),
       drums: 'KhKhSKhKKhKhSKhK'
     },
-    // Krisensitzung im Stilbruch: ein Plan wird geschmiedet
+    // Krisensitzung in der Shishabar: ein Plan wird geschmiedet
     jungs: {
       bpm: 120, duty: 'p25',
       lead: S(`E4 . . G4 . . A4 . . . C5 . A4 . . .
@@ -662,7 +662,7 @@
                D2 . . . E2 . . . A2 . . . . . . .`),
       drums: 'K..hS..hK.hhS..h'
     },
-    // Abspann: alle zusammen im Stilbruch
+    // Abspann: alle zusammen in der Shishabar
     abspann: {
       bpm: 112, duty: 'p50',
       lead: S(`G4 . . . B4 . D5 . G5 . . . F#5 . E5 .
@@ -691,7 +691,7 @@
     // Endgegner.
     /* --- Minispiele (shisha.js, tisch.js, kasse.js) --- */
 
-    // Stilbruch, Shisha-Duell: langsam, orientalisch, viel Luft dazwischen
+    // Shishabar, Shisha-Duell: langsam, orientalisch, viel Luft dazwischen
     shisha: {
       bpm: 92, duty: 'p50',
       lead: S(`D5 . . D#5 F#5 . G5 . A5 . . . G5 . F#5 .

@@ -162,8 +162,7 @@
     f.phase = 'pause'; f.t = 0; f.weiterBei = 40; f.welle = 0;
     G.shake(6, 16);
     S().play('alarm');
-    G.floats.add(G.player.cx(), G.player.y - 40, d.text || 'HINTERHALT!', '#ff6a5a', 90);
-    G.floats.add(G.player.cx(), G.player.y - 26, 'DIE GITTER SIND ZU.', '#ffd257', 80);
+    G.floats.add(G.player.cx(), G.player.y - 34, (d.text || 'HINTERHALT!') + '|DIE GITTER SIND ZU', '#ff6a5a', 90);
   }
 
   function welle(G, f) {
@@ -193,7 +192,7 @@
       return;
     }
     p.score += 500;
-    G.floats.add(p.cx(), p.y - 40, d.geschafft || 'GESCHAFFT! +500', '#8cd85a', 100);
+    G.floats.add(p.cx(), p.y - 34, (d.geschafft || 'GESCHAFFT!').replace(/ \+500$/, '') + '|+500', '#8cd85a', 100);
     var mitte = ((d.x0 + d.x1) / 2) * T + T / 2;
     (d.belohnung || ['herz', 'honig', 'honig', 'honig']).forEach(function (t, k, a) {
       G.addItem(t, mitte + (k - (a.length - 1) / 2) * 16, d.y * T - 40, true);
@@ -212,7 +211,7 @@
       G.streckeFest.gefunden++;
       p.score += 300;
       S().play('oneUp');
-      G.floats.add(p.cx(), p.y - 30, 'GEHEIMNIS GEFUNDEN! +300', '#ffd257', 100);
+      G.floats.add(p.cx(), p.y - 30, 'GEHEIMNIS!|+300', '#ffd257', 100);
       G.particles.burst(p.cx(), p.y + 6, 20, { col: '#ffd257', spread: 2.6, up: 1.2, life: 34 });
     }
   }

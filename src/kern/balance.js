@@ -90,7 +90,7 @@
     /* ---------- Waffen (23.10., waffen.js) ----------
        In manchen Leveln liegt eine Waffe, die zur Geschichte passt:
        Nunchaku (Sparmarkt), Shawarma-Messer (Hamza), Obstmesser
-       (Stilbruch), Spartaner-Schwert (Georgios), Krummsaebel (Istanbul).
+       (Shishabar), Spartaner-Schwert (Georgios), Krummsaebel (Istanbul).
        SHIFT / E = Schlag, drei Schlaege hintereinander = Kombo. Mit Waffe
        gibt es KEINE Arschbombe — dafuer RUNTER + Schlag in der Luft =
        Abwaertsstich (federt von Gegnern ab, wie bei Shovel Knight). */

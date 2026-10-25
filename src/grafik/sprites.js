@@ -972,7 +972,7 @@
   `, { k: '#1b1220', m: '#8a93ab', M: '#5b6376' });
 
   /* ---------------------------------------------------------------
-     LEVEL 6 — Mustang, Stilbruch, Siegerehrung
+     LEVEL 6 — Mustang, Shishabar, Siegerehrung
      --------------------------------------------------------------- */
 
   /* Der Mustang. Yusuf faehrt, Huseyin sitzt hinten und sagt nichts. */
@@ -2043,7 +2043,7 @@
   `, { k: '#1b1220', w: '#f4f4f0', b: '#2a2a34' });
 
   /* ---------------------------------------------------------------
-     LEVEL 14 — Stilbruch. Die Typen vom Nebentisch.
+     LEVEL 14 — Shishabar. Die Typen vom Nebentisch.
      --------------------------------------------------------------- */
 
   var TYP_ART = `
@@ -3387,7 +3387,7 @@
       far:  '#c2cad8', near: '#a6b0c2',
       accent: '#ff6a3c'
     },
-    // Nachtstrasse Richtung Stilbruch
+    // Nachtstrasse Richtung Shishabar
     strasse: {
       top:  ['#5a5f6e', '#43485a', '#2e3242', '#1a1c26'],
       fill: ['#3a3e4c', '#2c303c', '#1f222c', '#12141c'],
@@ -3428,7 +3428,7 @@
       far:  '#4e2c1c', near: '#2e1a10',
       accent: '#ffd257'
     },
-    // Stilbruch von innen: dunkler Teppich, Neon, Rauch
+    // Shishabar von innen: dunkler Teppich, Neon, Rauch
     bar: {
       top:  ['#7a4a7a', '#5a3060', '#3e2046', '#1e1024'],
       fill: ['#3e2046', '#30183a', '#24102c', '#12081a'],

@@ -269,7 +269,7 @@
     G.enemies = []; G.items = []; G.projectiles = [];
     G.particles.list.length = 0; G.floats.list.length = 0;
     G.fress = null;
-    G.boss = null; G.bossStarted = false;
+    G.boss = null; G.bossStarted = false; G.wach = null;
     G.arena = lvl.arena ? { x: lvl.arena.x * T, w: lvl.arena.w * T }
             : (lvl.boss ? { x: (lvl.boss.x - 34) * T, w: 45 * T } : null);
     // Level 8 ist keine Huepfstrecke, sondern die Szene aus eat.js
@@ -283,7 +283,7 @@
     // Level 29/30: Semihs Dimensionen (Schwerkraft, Wind, klein sein, Scherben)
     G.schwere = 1; G.wind = 0; G.klein = 0; G.dim = null; G.riss = null;
     G.wut = !!lvl.wut;        // Level 30: Yusuf rastet aus
-    G.autoAx = null; G.autoMax = 0; G.camFocus = null;
+    G.autoAx = null; G.autoMax = 0; G.camFocus = null; G.auftritt = null;
     G.talk = {};
     G.wo = {};                // wo Figuren ohne feste Stelle gerade reden (Mirkan)
     // Der Rausch gehoert zum Kampf: wer stirbt, wacht nuechtern auf.
@@ -703,7 +703,7 @@
     }
     if (p && !p.dead) {
       p.cheer = 150; p.laughTimer = 80;
-      G.floats.add(p.cx(), p.y - 30, 'BESIEGT! HÖ HÖ HÖÖÖ!', '#ffd257', 120);
+      G.floats.add(p.cx(), p.y - 30, 'BESIEGT!|HÖ HÖ HÖÖÖ', '#ffd257', 120);
     }
   }
 
@@ -801,7 +801,7 @@
   G.onBossPhase = function (phase) { bossPhase(phaseLines(LV.boss, phase), 70); };
 
   G.onBossDead = function () {
-    // Weiter geht's: Mustang, Stilbruch, Siegerehrung. Von Semih hoert
+    // Weiter geht's: Mustang, Shishabar, Siegerehrung. Von Semih hoert
     // man erst wieder in Yusufs Albtraeumen (albtraum.js).
     bossDown(LV.boss.end, function () { nextLevel(5); });
   };
@@ -922,7 +922,7 @@
     });
   };
 
-  /** Satt. Nach Hamza geht es in den Stilbruch, nach Georgios ins Bett —
+  /** Satt. Nach Hamza geht es in die Shishabar, nach Georgios ins Bett —
       und am naechsten Morgen ruft Esat an: Fussball. */
   G.onMahlDone = function (kind) {
     if (kind === 'imbiss') { nextLevel(13); return; }
@@ -952,7 +952,7 @@
   };
 
   /** Level 6 und 12 aus Yusufs Sicht (fahrt.js, downhill.js): angekommen.
-      Weiter wie bei jedem Levelende — Stilbruch bzw. unten am Berg. */
+      Weiter wie bei jedem Levelende — Shishabar bzw. unten am Berg. */
   G.onFahrtDone = function () { finishLevel(); };
   /** Checkpoint aus einem Modul heraus (Honig, Punkte, Gold merken). */
   G.checkpointSpeichern = function () { saveCheckpointState(); };
@@ -1043,7 +1043,7 @@
   /** Yusuf wurde besiegt. Die Jungs suchen ihn (Vorszene von Level 30). */
   G.onBesiegtDone = function () { nextLevel(29); };
 
-  /** Semih liegt wirklich. Yusuf weckt die Jungs auf, dann: Stilbruch. */
+  /** Semih liegt wirklich. Yusuf weckt die Jungs auf, dann: Shishabar. */
   G.onSemih2Dead = function () {
     bossDown(LV.semih2.end, function () {
       fadeTo(function () {
@@ -1701,13 +1701,14 @@
         G.checkpoint = cps[i];
         saveCheckpointState();
         S.play('checkpoint');
-        G.floats.add(cx + 12, cy - 22, 'KURZES NICKERCHEN GESPEICHERT', '#ffd257', 100);
+        G.floats.add(cx + 12, cy - 22, 'CHECKPOINT!|NICKERCHEN GESPEICHERT', '#ffd257', 100);
         G.particles.burst(cx + 12, cy - 6, 14, { col: '#ffd257', spread: 2.4, up: 1, life: 30 });
       }
     }
 
     // Leute am Weg, Hinterhalte, falsche Waende (strecke.js)
     if (global.Strecke && !frozen && !G.cut) global.Strecke.update(G);
+    if (global.Wachsam && !frozen) global.Wachsam.tick(G);
 
     // Boss auslösen
     if (G.arena && !G.bossStarted && p.cx() > G.arena.x + 56) {
@@ -1765,6 +1766,8 @@
         saveCheckpointState();
       }
       G.boss.intro = false;
+      // Der Boss merkt, wenn man immer denselben Trick spammt (wachsam.js)
+      if (global.Wachsam) global.Wachsam.an(G, G.boss, bt);
       // Energie und Verschnaufpausen je nach Schwierigkeitsgrad (balance.js)
       BAL.bossAnpassen(G.boss, bt);
       keineWiederholung(G.boss);
@@ -1817,7 +1820,10 @@
         // Nach einem Tod (auch mit allen Leben) kommt beides nicht wieder.
         var kt = LV.bossKarten && LV.bossKarten[bt];
         if (kt) d0 = [['karte', kt.join('|')]].concat(d0 || []);
-        if (d0) startDialog(d0, function () { G.state = 'play'; });
+        var gespraech = function () { if (d0) startDialog(d0, function () { G.state = 'play'; }); };
+        // Erst der Auftritt (auftritt.js): Kinobalken, BOSSKAMPF!, der Boss kommt rein
+        if (global.Auftritt && !G.keinAuftritt) global.Auftritt.start(G, G.boss, bt, gespraech);
+        else gespraech();
       }
     }
 
@@ -1840,6 +1846,8 @@
     G.floats.update();
     for (var tk in G.talk) if (G.talk[tk].t > 0) G.talk[tk].t--;
     if (G.dizzy > 0 && !frozen) G.dizzy--;
+    // Boss-Auftritt (auftritt.js): der Boss kommt rein, die Kamera schaut hin
+    if (G.auftritt && global.Auftritt) global.Auftritt.tick(G);
     updateCamera();
     if (G.banner > 0) G.banner--;
   }
@@ -1899,7 +1907,7 @@
       return;
     }
 
-    // Level 14: der reservierte Tisch im Stilbruch. Jetzt wird geraucht.
+    // Level 14: der reservierte Tisch in der Shishabar. Jetzt wird geraucht.
     if (G.lvl.id === 14) {
       G.after(50, function () {
         miniStarten('shisha', LV.shisha.vorher, function () {
@@ -2182,7 +2190,7 @@
   }
 
   /** Nach dem Durchgang: YUSUF WRAPPED (spass.js), danach der Abspann —
-      alle im Stilbruch (finale.js). */
+      alle in der Shishabar (finale.js). */
   function zumRueckblick() {
     var abspann = function () { G.state = 'ending'; G.endScroll = 0; S.music('abspann'); };
     if (global.Spass) global.Spass.wrappedStart(G, function () { fadeTo(abspann); });
@@ -2347,7 +2355,8 @@
       // Semih: Sepia, zerspringendes Bild, Anzeige der Kraftprobe
       if (global.SemihKampf) global.SemihKampf.overlay(ctx, G, W, H);
       var eigen = G.modus && G.modMod.full;
-      if (!G.eat && !G.scene && !G.cut && !eigen) drawHUD();
+      if (!G.eat && !G.scene && !G.cut && !eigen && !G.auftritt) drawHUD();
+      if (G.auftritt && global.Auftritt) global.Auftritt.draw(ctx, G, W, H);
       if (G.modus && !eigen && G.modMod.hud && !G.scene) G.modMod.hud(ctx, G, W, H);
       if (G.state === 'paused') drawPause();
       if (G.state === 'clear') drawResults();
@@ -2641,11 +2650,11 @@
         ctx.closePath(); ctx.fill();
       }
     } else if (theme === 'bar') {
-      // Stilbruch von innen: Neon, Rauch, Shisha-Silhouetten
+      // Shishabar von innen: Neon, Rauch, Shisha-Silhouetten
       for (i = -1; i < 10; i++) {
         x = i * 170 - (f % 170);
         var pulse2 = ((G.tick + i * 40) % 140) < 5 ? '#ffd8f0' : '#ff8ad8';
-        F.draw(ctx, i % 2 ? 'SHISHA' : 'STILBRUCH', x + 60, 40, { color: pulse2, align: 'center', scale: 2 });
+        F.draw(ctx, i % 2 ? 'SHISHA' : 'SHISHABAR', x + 60, 40, { color: pulse2, align: 'center', scale: 2 });
         bgLicht(x + 60, 46, 60, pulse2, 0.26);
         rect(x + 10, 36, 100, 1, 'rgba(255,138,216,0.3)');
       }
@@ -2707,7 +2716,7 @@
           }
         }
       }
-      var BANDE = ['DÖNER', 'HONIG', 'STILBRUCH', 'GYM? NEIN', 'KOOBIDEH'];
+      var BANDE = ['DÖNER', 'HONIG', 'SHISHABAR', 'GYM? NEIN', 'KOOBIDEH'];
       for (i = -1; i < 9; i++) {
         x = i * 120 - (n % 120);
         rect(x, 214, 116, 20, '#1a2a4a');
@@ -3038,13 +3047,13 @@
     // Sicherheitskontrolle, Gate B12, Hotel (reise.js)
     if (global.Reise && global.Reise.ziel(ctx, G, gx, gy)) return;
 
-    // Level 6 endet nicht am Honigtopf, sondern vor dem Stilbruch.
+    // Level 6 endet nicht am Honigtopf, sondern vor der Shishabar.
     if (G.lvl.id === 6) {
       rect(gx - 40, gy - 104, 132, 104, '#241d3a');
       rect(gx - 34, gy - 98, 120, 54, '#17122a');
       rect(gx - 34, gy - 98, 120, 2, '#ff8ad8');
       var pulse = (G.tick % 90) < 6 ? '#ffd8f0' : '#ff8ad8';
-      F.draw(ctx, 'STILBRUCH', gx + 26, gy - 90,
+      F.draw(ctx, 'SHISHABAR', gx + 26, gy - 90,
              { color: pulse, align: 'center', scale: 2, shadow: true });
       F.draw(ctx, 'SHISHA BAR', gx + 26, gy - 70,
              { color: '#8ad8e8', align: 'center' });
@@ -3085,7 +3094,7 @@
       }
       return;
     }
-    // Level 14 endet am reservierten Tisch im Stilbruch
+    // Level 14 endet am reservierten Tisch in der Shishabar
     if (G.lvl.id === 14) {
       rect(gx - 34, gy - 30, 96, 30, '#5a1e3a');
       rect(gx - 34, gy - 30, 96, 4, '#7a2e52');
@@ -3393,7 +3402,7 @@
       P.draw(ctx, pr.spr, pr.x - camX, pr.y - camY, pr.vx < 0);
     }
 
-    if (G.boss) drawBoss(camX, camY);
+    if (G.boss && !G.boss.auftrittVersteckt) drawBoss(camX, camY);
     // Level 21: Mirkan, sein Mercedes und was davon liegen bleibt
     if (G.lvl.mirkanCut && global.Airsoft) global.Airsoft.mirkanDraw(ctx, G, camX, camY);
     // Wo Yusuf schon gestorben ist: Grabsteine (spass.js)
@@ -4371,15 +4380,7 @@
   }
 
   function drawFloats(camX, camY) {
-    var l = G.floats.list;
-    for (var i = 0; i < l.length; i++) {
-      var f = l[i];
-      if (!f.text) continue;
-      ctx.globalAlpha = Math.min(1, f.life / 22);
-      F.draw(ctx, f.text, f.x - camX, f.y - camY,
-             { color: f.col, align: 'center', shadow: true });
-      ctx.globalAlpha = 1;
-    }
+    G.floats.draw(ctx, camX, camY, W);
   }
 
   /* ---------- HUD ---------- */
@@ -5269,7 +5270,7 @@
   }
 
   function drawEnding() {
-    // Der Abspann: alle im Stilbruch, mit Semih (finale.js)
+    // Der Abspann: alle in der Shishabar, mit Semih (finale.js)
     if (global.Finale) {
       global.Finale.abspannDraw(ctx, G, W, H, G.endScroll);
       drawParticles(0, 0);

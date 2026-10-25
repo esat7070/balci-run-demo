@@ -131,12 +131,24 @@
     }
   }
 
+  /* Ausrufe statt Zahlen (Esat, 25.10.: "mehr Ausdruecke"). Gross steht
+     das Wort, klein darunter die Aura. */
+  var AUSRUF = {
+    mega: ['SHEESH!', 'LEGENDÄR!', 'MEGA-AURA!', 'UNREAL!', 'WAHNSINN!'],
+    gut: ['SAUBER!', 'KRASS!', 'EHRE!', 'STARK!', 'NICE!', 'LÄUFT!', 'WILD!'],
+    klein: ['NICE!', 'LÄUFT!', 'GUT SO!', 'JAWOLL!'],
+    minus: ['PEINLICH.', 'CRINGE.', 'AUTSCH.', 'UPS.', 'OH NEIN.']
+  };
+  function ausruf(n) {
+    return rnd(n < 0 ? AUSRUF.minus : n >= 500 ? AUSRUF.mega : n >= 150 ? AUSRUF.gut : AUSRUF.klein);
+  }
+
   function aura(G, n, x, y, text) {
     var p = G.player;
     if (!p) return;
     p.aura = (p.aura || 0) + n;
     if (x !== undefined) {
-      G.floats.add(x, y, (n > 0 ? '+' : '') + n + ' AURA' + (text ? ' ' + text : ''), n > 0 ? AURA_COL : '#ff6a6a', 70);
+      G.floats.add(x, y, (text || ausruf(n)) + '|' + (n > 0 ? '+' : '') + n + ' AURA', n > 0 ? AURA_COL : '#ff6a6a', 72);
     }
   }
 
@@ -199,14 +211,13 @@
     else if (!p.grounded || Math.abs(p.vx) < 0.5) G.rennT = 0;
     if (G.rennT >= 100 && !G.rutschTipp) {
       G.rutschTipp = true;
-      G.toasts.push({ art: 'text', zeile1: 'TIPP: BEIM LAUFEN RUNTER DRÜCKEN',
-                      zeile2: 'BAUCHRUTSCHER! KOSTET ETWAS PUSTE.', col: '#ffd257', zeit: 200 });
+      G.toasts.push({ art: 'text', tipp: true, zeile1: 'BAUCHRUTSCHER',
+                      zeile2: 'BEIM LAUFEN RUNTER DRÜCKEN', col: '#ffd257', zeit: 170 });
     }
 
     // Aura-Farming: eine Weile cool rumstehen. Danach schlaeft er ja doch ein.
     if (p.idle === 150 && !p.sleeping && zuFuss) {
-      G.floats.add(p.cx(), p.y - 22, 'AURA FARMING...', AURA_COL, 90);
-      aura(G, 50, p.cx(), p.y - 34);
+      aura(G, 50, p.cx(), p.y - 24, 'AURA FARMING...');
       trophaee(G, 'aura_farming');
     }
     if (p.sleeping && !G.warSchlafend) trophaee(G, 'nur_kurz');
@@ -231,6 +242,7 @@
     // In der Pause und im Shop warten die Hinweise (im Shop stuenden sie
     // ueber Preis und Beschreibung) — sie kommen danach
     if (G.toasts && G.toasts.length && G.state !== 'paused' && G.state !== 'shop') {
+      G.toasts[0].alt = (G.toasts[0].alt || 0) + 1;
       if (--G.toasts[0].zeit <= 0) G.toasts.shift();
     }
     var sc = G.scene;
@@ -248,7 +260,7 @@
 
   function gegnerWeg(G, e) {
     stop(G, 3);
-    if (G.combo >= 2) aura(G, 25 * G.combo, e.cx(), e.y - 32);
+    if (G.combo >= 2) aura(G, 25 * G.combo);
     if (G.combo >= 5) trophaee(G, 'combo');
   }
 
@@ -259,7 +271,7 @@
 
   function gold(G) {
     var p = G.player;
-    aura(G, 300, p.cx(), p.y - 44);
+    aura(G, 300);
   }
 
   /** Bauchrutscher: das erste Mal merken und den Weitsprung erklaeren. */
@@ -274,8 +286,8 @@
     }
     if (!(save.tipps & 2) && !G.weitTipp) {
       G.weitTipp = true;
-      G.toasts.push({ art: 'text', zeile1: 'TIPP: IM RUTSCHEN SPRINGEN',
-                      zeile2: '= BAUCH-WEITSPRUNG. FLACH UND WEIT.', col: '#ffd257', zeit: 200 });
+      G.toasts.push({ art: 'text', tipp: true, zeile1: 'BAUCH-WEITSPRUNG',
+                      zeile2: 'IM RUTSCHEN SPRINGEN', col: '#ffd257', zeit: 170 });
     }
   }
 
@@ -289,7 +301,7 @@
 
   function salto(G, flips) {
     var p = G.player;
-    aura(G, flips > 1 ? 500 : 150, p.cx(), p.y - 36);
+    aura(G, flips > 1 ? 500 : 150);
     if (flips > 1) trophaee(G, 'doppelsalto');
   }
 
@@ -409,36 +421,47 @@
   function drawOben(ctx, G, W, H) {
     var t = G.toasts && G.toasts[0];
     if (!t || G.state === 'shop') return;
-    var y = Math.min(8, -40 + (200 - t.zeit) * 4);
-    if (t.zeit < 12) y = 8 - (12 - t.zeit) * 4;
+    /* Kompakt und dezent (Esat, 25.10.): schmale Karte mit Farbleiste
+       links, gleitet weich rein und blendet aus. Breite nach dem Text. */
+    var alt = t.alt || 0;
+    var ein = Math.min(1, alt / 14), aus = Math.min(1, t.zeit / 14);
+    var weich = 1 - (1 - ein) * (1 - ein) * (1 - ein);
+    var y = Math.round(6 - (1 - weich) * 34 - (1 - aus) * 10);
     // Ausserhalb des Spiels (Ergebnis, Wrapped, Game Over, Teaser) kommt
     // der Hinweis von unten — oben stehen dort die Ueberschriften
     var imSpiel = G.state === 'play' || G.state === 'dialog' || G.state === 'paused';
-    if (!imSpiel) y = H - 72 - (y - 8);
-    var bw = 250, bx = Math.round(W / 2 - bw / 2);
-    ctx.globalAlpha = 0.94;
-    rect(ctx, bx, y, bw, 34, 'rgba(10,6,16,0.92)');
-    ctx.globalAlpha = 1;
+    if (!imSpiel) y = H - 34 - (y - 6);
+    var col, z1, z2, links = 10;
     if (t.art === 'troph') {
       var st = STUFE[t.t[3]];
-      ctx.strokeStyle = st.col; ctx.lineWidth = 1;
-      ctx.strokeRect(bx + 0.5, y + 0.5, bw - 1, 33);
-      pokal(ctx, bx + 12, y + 10, t.t[3]);
-      F.draw(ctx, 'TROPHÄE: ' + st.name, bx + 36, y + 6, { color: st.col });
-      F.draw(ctx, t.t[1], bx + 36, y + 18, { color: '#ffffff', shadow: true });
+      col = st.col; z1 = 'TROPHÄE: ' + st.name; z2 = t.t[1]; links = 30;
     } else if (t.art === 'rang') {
-      ctx.strokeStyle = t.r.col; ctx.lineWidth = 1;
-      ctx.strokeRect(bx + 0.5, y + 0.5, bw - 1, 33);
-      F.draw(ctx, t.r.b, bx + 20, y + 6, { color: t.r.col, align: 'center', scale: 3, shadow: true });
-      F.draw(ctx, 'RANG ' + t.r.b + ': ' + t.r.titel, bx + 40, y + 6, { color: t.r.col });
-      F.draw(ctx, t.fehlt.length ? 'FEHLT: ' + t.fehlt.join(', ') : 'ALLES DRIN. HÖ HÖ HÖÖÖ.', bx + 40, y + 19,
-             { color: '#c8c0d8' });
+      col = t.r.col; z1 = 'RANG ' + t.r.b + ': ' + t.r.titel;
+      z2 = t.fehlt.length ? 'FEHLT: ' + t.fehlt.join(', ') : 'ALLES DRIN. HÖ HÖ HÖÖÖ.'; links = 30;
     } else {
-      ctx.strokeStyle = t.col; ctx.lineWidth = 1;
-      ctx.strokeRect(bx + 0.5, y + 0.5, bw - 1, 33);
-      F.draw(ctx, t.zeile1, W / 2, y + 6, { color: t.col, align: 'center' });
-      F.draw(ctx, t.zeile2, W / 2, y + 19, { color: '#c8c0d8', align: 'center' });
+      col = t.col || '#ffd257'; z1 = t.zeile1 || ''; z2 = t.zeile2 || '';
+      if (t.tipp) links = 36;
     }
+    var tw = Math.max(F.measure(z1, 1, 1), z2 ? F.measure(z2, 1, 1) : 0);
+    var bw = Math.max(130, Math.min(W - 20, tw + links + 12)), bh = z2 ? 25 : 16;
+    var bx = Math.round(W / 2 - bw / 2);
+    var ga = ctx.globalAlpha;
+    ctx.globalAlpha = ga * Math.min(1, aus * 1.4);
+    rect(ctx, bx + 1, y, bw - 2, bh, 'rgba(10,6,16,0.82)');
+    rect(ctx, bx, y + 1, bw, bh - 2, 'rgba(10,6,16,0.82)');
+    rect(ctx, bx, y + 1, 3, bh - 2, col);
+    ctx.globalAlpha = ga * Math.min(1, aus * 1.4) * 0.5;
+    rect(ctx, bx + 3, y + bh - 1, bw - 4, 1, col);
+    ctx.globalAlpha = ga * Math.min(1, aus * 1.4);
+    if (t.art === 'troph') pokal(ctx, bx + 11, y + 7, t.t[3]);
+    else if (t.art === 'rang') F.draw(ctx, t.r.b, bx + 17, y + 4, { color: t.r.col, align: 'center', scale: 2, shadow: true });
+    else if (t.tipp) {
+      rect(ctx, bx + 7, y + 4, 24, 9, col);
+      F.draw(ctx, 'TIPP', bx + 19, y + 5, { color: '#140c1c', align: 'center' });
+    }
+    F.draw(ctx, z1, bx + links, y + 4, { color: col, shadow: true });
+    if (z2) F.draw(ctx, z2, bx + links, y + 14, { color: '#c8c0d8' });
+    ctx.globalAlpha = ga;
   }
 
   /** Aura oben rechts unter der Zeit */
@@ -617,7 +640,7 @@
     rutsch: rutsch, weitsprung: weitsprung,
     tod: tod, gameOver: gameOver, levelFertig: levelFertig, bewerten: bewerten,
     trophaee: trophaee, anzahl: anzahl, gesamt: TROPH.length, hat: function (id) { return !!trophaeen[id]; },
-    form: form, drawWelt: drawWelt, drawOben: drawOben, hud: hud, drawRang: drawRang, karte: karte,
+    form: form, drawWelt: drawWelt, drawOben: drawOben, hud: hud, drawRang: drawRang, karte: karte, aura: aura,
     trophUpdate: trophUpdate, trophDraw: trophDraw,
     wrappedStart: wrappedStart, wrappedUpdate: wrappedUpdate, wrappedDraw: wrappedDraw,
     RANG: RANG, TROPH: TROPH
