@@ -1213,6 +1213,7 @@ window.Sprache.dazu('en', {
 // ---- bosse/felix.js
 
 // ---- bosse/semih.js
+"SPRINGEN!": "JUMP!",
 
 // ---- minispiele/doener.js
 "BROT": "BREAD",
@@ -1540,10 +1541,6 @@ window.Sprache.dazu('en', {
 "SCHWER": "HEAVY",
 "NOCH {n} AUF DEM BAND": "{n} LEFT ON THE BELT",
 "KASSE {n}": "CHECKOUT {n}",
-"SPRUNG HALTEN = ZIEHEN, IN DER ZONE LOSLASSEN. JEDE ZONE = EIN RING. ESAT IN SEINER ZONE: RUNTER = RÜLPSEN.": "HOLD JUMP = DRAW, LET GO IN THE ZONE. EVERY ZONE = ONE RING. ESAT IN HIS ZONE: DOWN = BURP.",
-"OMA LEGT VOR, DU ISST NACH: SPRUNG = BEISSEN, RUNTER = TUNKEN. IM SELBEN RHYTHMUS.": "GRANDMA SERVES, YOU EAT IT BACK: JUMP = BITE, DOWN = DIP. IN THE SAME RHYTHM.",
-"SPRUNG HALTEN = AUSHOLEN UND DRILLEN. SPRUNG = ANHAUEN. LINKS / RECHTS = MÖWEN.": "HOLD JUMP = WIND UP AND REEL. JUMP = STRIKE. LEFT / RIGHT = SEAGULLS.",
-"SPRUNG = ABBEISSEN, SO SCHNELL DU KANNST. EXTRA SCHARF? RUNTER = AYRAN.": "JUMP = BITE, AS FAST AS YOU CAN. EXTRA HOT? DOWN = AYRAN.",
 
 // ---- Steuerung und Entwickler-Modus 25.10. (kern/input.js, kern/entwickler.js)
 "A / D (ODER PFEILE)": "A / D (OR ARROWS)",
@@ -1665,7 +1662,6 @@ window.Sprache.dazu('en', {
 
 // ---- Kasse neu (kasse.js, 26.10.): A/S/D = Schwer/Kuehl/Zart
 "{n} ZURÜCK": "{n} RETURNED",
-"A / S / D = SCHWER / KÜHL / ZART. W = OMAS SACHEN ZURÜCK.": "A / S / D = HEAVY / COLD / FRAGILE. W = GIVE GRANDMA'S THINGS BACK.",
 
 // ---- Shawarma-Challenge neu (tisch.js, 26.10.): haemmern, Chili, Ayran
 "ZEIT! {n} VON SECHS.": "TIME! {n} OUT OF SIX.",
@@ -1695,4 +1691,88 @@ window.Sprache.dazu('en', {
 // ---- Fehler mitten im Spiel: zurueck zum Titel (game.js, 29.10.)
 "HOPPLA, DA GING WAS SCHIEF": "OOPS, SOMETHING WENT WRONG",
 "DEIN SPIELSTAND IST SICHER.": "YOUR PROGRESS IS SAFE.",
+
+// ---- Minispiele neu gedacht (29.10.): Fangen, Salat raus, Rauchring-Duell, Oma schaut, Angeln am Wasser
+// Einpacken (kasse.js)
+"SERIE! X{n}": "STREAK! X{n}",
+"SERIE {n}": "STREAK {n}",
+"X{n}  SERIE {n}": "X{n}  STREAK {n}",
+// Shawarma-Challenge (tisch.js)
+"+{n} SAUBER": "+{n} CLEAN",
+"ZEIT! {n} VON {n}. HABIBI...": "TIME! {n} OF {n}. HABIBI...",
+"{n} S": "{n} S",
+"NUMMER {n}...": "NUMBER {n}...",
+// Shisha-Duell (shisha.js)
+// Omas Teller (taverne.js)
+"+{n} NACHSCHLAG": "+{n} SECONDS",
+"TELLER {n}": "PLATES {n}",
+// Angeln an der Galata (angeln.js)
+"{n} ({n} WEG)": "{n} ({n} LOST)",
+"HALTEN": "HOLD",
+"{n} CM   +{n}   SAUBER!": "{n} CM   +{n}   CLEAN!",
+"+{n}   SAUBER!": "+{n}   CLEAN!",
+// Dialoge zu den neuen Minispielen (levels.js, 29.10.)
+// Pausenmenue: was in diesem Minispiel gilt (game.js)
+"LINKS / RECHTS = LAUFEN UND FANGEN. LILA (OMAS SACHEN) NICHT FANGEN.": "LEFT / RIGHT = RUN AND CATCH. DON'T CATCH PURPLE (GRANDMA'S STUFF).",
+// Trophaeen (spass.js)
+"+{n} KCAL": "+{n} KCAL",
+// ---- Minispiele: Reaktionszeit statt Regeln (29.10. abends)
+// Shawarma: Alufolie
+// Shisha-Duell: wer zuerst pustet
+"RUNDE {n}/{n}": "ROUND {n}/{n}",
+"ESAT: {n} S": "ESAT: {n} S",
+"ESAT: {n} S   +{n}": "ESAT: {n} S   +{n}",
+"BESTE {n} S": "BEST {n} S",
+// Omas Teller: selbst essen dauert
+// Angeln: reagieren statt Anzeige
+// Dialog und Pausenhilfe
+"SCHILD GRÜN = SOFORT SPRUNG. ZU FRÜH = RUNDE WEG. GELB UND \"JETZT!\" SIND FINTEN.": "SIGN GREEN = JUMP AT ONCE. TOO EARLY = ROUND LOST. YELLOW AND \"NOW!\" ARE FAKES.",
+"ERST WENN DIE FOLIE AUF IST: SPRUNG = ABBEISSEN, RUNTER = SALAT RAUS (AUF ESAT).": "ONLY WHEN THE FOIL IS OFF: JUMP = BITE, DOWN = SALAD OUT (AT ESAT).",
+"SPRUNG = SELBST ESSEN (DAUERT). RUNTER = DER KATZE GEBEN - NUR WENN OMA WEGSCHAUT. HM? = AUFHÖREN.": "JUMP = EAT YOURSELF (SLOW). DOWN = FEED THE CAT - ONLY WHEN GRANDMA LOOKS AWAY. HM? = STOP.",
+"SPRUNG HALTEN = ZIELEN, LOSLASSEN = WERFEN. BEIM ! ANHAUEN. HALTEN = EINHOLEN. SPRITZT ES: SOFORT LOSLASSEN.": "HOLD JUMP = AIM, RELEASE = CAST. STRIKE AT THE !. HOLD = REEL IN. IF IT SPLASHES: LET GO AT ONCE.",
+// ---- kern/koop.js: zu zweit durch die Geschichte
+"ZU ZWEIT": "CO-OP",
+"ALLEIN WEITER": "GO ON SOLO",
+"DIE GANZE GESCHICHTE. ZWEI SPIELER. EIN HONIGKONTO.": "THE WHOLE STORY. TWO PLAYERS. ONE HONEY ACCOUNT.",
+"SPIELER {n}": "PLAYER {n}",
+"TASTATUR LINKS": "KEYBOARD LEFT",
+"TASTATUR RECHTS": "KEYBOARD RIGHT",
+"TASTATUR": "KEYBOARD",
+"CONTROLLER": "CONTROLLER",
+"CONTROLLER {n}": "CONTROLLER {n}",
+"TOUCH": "TOUCH",
+"CONTROLLER ANSCHLIESSEN": "CONNECT A CONTROLLER",
+"A D = LAUFEN": "A D = WALK",
+"LEERTASTE = SPRINGEN": "SPACE = JUMP",
+"SHIFT = SCHLAGEN": "SHIFT = ATTACK",
+"STRG = ARSCHBOMBE": "CTRL = BELLY SLAM",
+"PFEILE = LAUFEN": "ARROWS = WALK",
+"PFEIL HOCH = SPRINGEN": "UP ARROW = JUMP",
+". = SCHLAGEN": ". = ATTACK",
+", = ARSCHBOMBE": ", = BELLY SLAM",
+"PFEILE ODER A D = LAUFEN": "ARROWS OR A D = WALK",
+"STICK = LAUFEN": "STICK = WALK",
+"A = SPRINGEN": "A = JUMP",
+"X = SCHLAGEN": "X = ATTACK",
+"LB = ARSCHBOMBE": "LB = BELLY SLAM",
+"LINKS / RECHTS = FIGUR VON SPIELER {n}": "LEFT / RIGHT = PLAYER {n}'S CHARACTER",
+"{s} IST HEUTE DER BOSS.": "{s} IS THE BOSS TODAY.",
+"SPIELER {n} SPIELT {s}.": "PLAYER {n} PLAYS {s}.",
+"HIER BIN ICH!": "HERE I AM!",
+"WARTE AUF MICH!": "WAIT FOR ME!",
+"WIEDER DA!": "BACK IN!",
+"HILF MIR!": "HELP ME!",
+"SPRINGEN!": "JUMP!",
+"IN DER BLASE": "IN THE BUBBLE",
+"SPIELER {n} IST DRAN": "PLAYER {n}'S TURN",
+"SPIELER {n} SCHAUT ZU. BEIM NÄCHSTEN MAL WIRD GETAUSCHT.": "PLAYER {n} WATCHES. NEXT TIME YOU SWAP.",
+"- = LEERTASTE   . = SHIFT   , = STRG   PFEILE = W A S D": "- = SPACE   . = SHIFT   , = CTRL   ARROWS = W A S D",
+"W A S D, LEERTASTE, SHIFT, STRG - DIE PFEILE HAT SPIELER {n}": "W A S D, SPACE, SHIFT, CTRL - THE ARROWS ARE PLAYER {n}'S",
+"AM ZUG: SPIELER {n}": "TURN: PLAYER {n}",
+"LEBEN X{n}": "LIVES X{n}",
+// Anzeigen mit Zahlen, die auf Englisch gleich bleiben (fielen im Protokoll als fehlend auf)
+"AURA {n}": "AURA {n}",
+"AURA -{n}": "AURA -{n}",
+"YUSUF X{n}": "YUSUF X{n}",
+"YUSUF & ESAT  {n} : {n}  GEORGIOS & ALEX": "YUSUF & ESAT  {n} : {n}  GEORGIOS & ALEX",
 });

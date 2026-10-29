@@ -70,10 +70,14 @@
     for (i = 0; i < st.npcs.length; i++) if (G.wo) G.wo[st.npcs[i].d.who] = null;
   }
 
+  /* Zu zweit (koop.js): wer gerade mitspielt — sonst nur Yusuf */
+  function spieler(G) { return global.Koop ? global.Koop.aktive(G) : [G.player]; }
+
   /* ---------------- Begegnungen ---------------- */
 
   function npcUpdate(G, n) {
-    var p = G.player;
+    // Zu zweit redet, wer naeher dran ist
+    var p = global.Koop ? global.Koop.naechster(G, { x: n.x - 4, y: n.feet - 30, w: 8, h: 30 }) : G.player;
     n.anim++;
     var dx = p.cx() - n.x, ady = Math.abs(p.feet() - n.feet);
     n.blick = dx > 0 ? 1 : -1;
@@ -126,7 +130,8 @@
     if (f.phase === 'frei') return;
     if (f.phase === 'warten') {
       var x0 = (d.x0 + 2) * T, x1 = (d.x1 - 1) * T;
-      if (p.cx() > x0 && p.cx() < x1 && p.grounded && !p.dead && !G.boss) zu(G, f);
+      var drin = spieler(G).some(function (q) { return q.cx() > x0 && q.cx() < x1 && q.grounded && !q.dead; });
+      if (drin && !G.boss) zu(G, f);
       return;
     }
     // Die Gitter sind zu
@@ -160,6 +165,8 @@
       }
     });
     f.phase = 'pause'; f.t = 0; f.weiterBei = 40; f.welle = 0;
+    // Zu zweit: wer noch draussen steht, kommt mit hinter die Gitter
+    if (global.Koop) global.Koop.zusammen(G, d.x0 * T + T, d.x1 * T);
     G.shake(6, 16);
     S().play('alarm');
     G.floats.add(G.player.cx(), G.player.y - 34, (d.text || 'HINTERHALT!') + '|DIE GITTER SIND ZU', '#ff6a5a', 90);
@@ -203,7 +210,10 @@
   /* ---------------- Verstecke ---------------- */
 
   function versteckUpdate(G, v) {
-    var p = G.player, drin = overlap(p, { x: v.x - 2, y: v.y - 2, w: v.w + 4, h: v.h + 4 });
+    var box = { x: v.x - 2, y: v.y - 2, w: v.w + 4, h: v.h + 4 };
+    // Zu zweit: es reicht, wenn einer drin ist
+    var p = G.player, l = spieler(G), drin = false;
+    for (var i = 0; i < l.length; i++) if (overlap(l[i], box)) { drin = true; p = l[i]; }
     v.a += ((drin ? 0.1 : 1) - v.a) * 0.15;
     if (drin && !v.gefunden) {
       v.gefunden = true;

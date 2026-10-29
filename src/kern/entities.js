@@ -528,7 +528,8 @@
   Player.prototype.feet = function () { return this.y + this.h; };
 
   Player.prototype.update = function (g) {
-    var world = g.world, In = global.Input;
+    // Zu zweit (koop.js) hat jeder Spieler seine eigene Steuerung
+    var world = g.world, In = this.eingabe || global.Input;
     var frozen = g.frozen;
 
     if (this.dead) { this.deadUpdate(g); return; }
@@ -1235,7 +1236,8 @@
 
   /** Das tiefe Knurren. Kommt oft. Ohne Vorwarnung. */
   Player.prototype.doGrowl = function (g, line) {
-    if (this.growlCool > 0 || this.dead) return;
+    // Spieler 2 (zu zweit, koop.js) knurrt nicht — das ist Yusufs Ding
+    if (this.growlCool > 0 || this.dead || this.stumm) return;
     this.growlCool = 80;
     this.growlTimer = 24;
     global.Sound.play('growl');
@@ -1245,7 +1247,8 @@
   };
 
   Player.prototype.hurt = function (g, dmg, fromX) {
-    if (this.invuln > 0 || this.dead) return;
+    // In der Honigblase (zu zweit, koop.js) passiert ihm nichts
+    if (this.invuln > 0 || this.dead || this.blase) return;
     if (this.power > 0) return;
     // Boss liegt schon: Was jetzt noch trifft, zaehlt nicht mehr. Sonst
     // konnte man im selben Moment gewinnen und sterben — und musste nach
@@ -1298,7 +1301,7 @@
   };
 
   Player.prototype.kill = function (g, fell) {
-    if (this.dead) return;
+    if (this.dead || this.blase) return;
     this.dead = true;
     this.deadTimer = 0;
     this.hp = 0;
@@ -1328,7 +1331,7 @@
     // Schrecksekunde = sofort weiter (wie bei Super Meat Boy). Die Tests
     // zaehlen Ticks und schalten das ab (g.keinSchnellerNeustart).
     if (this.deadTimer > SP.TOD_SCHNELL && this.deadTimer < SP.TOD_DAUER && !this.deadHandled &&
-        !g.keinSchnellerNeustart && global.Input.hit('jump')) {
+        !g.keinSchnellerNeustart && (this.eingabe || global.Input).hit('jump')) {
       this.deadTimer = SP.TOD_DAUER;
     }
     // Nur EINMAL melden — sonst frisst die Blende alle Leben auf.
@@ -1365,7 +1368,7 @@
     if (this.pound > 0) return { pose: 'duck', face: face };
     if (this.pound === -1) return { pose: 'pound', face: face };
     if (!this.grounded) return { pose: this.vy < 0 ? 'jump' : 'fall', face: face };
-    if (global.Input.down('down')) return { pose: 'duck', face: face };
+    if ((this.eingabe || global.Input).down('down')) return { pose: 'duck', face: face };
     if (Math.abs(this.vx) > 0.3) return { pose: 'run', face: face };
     return { pose: 'idle', face: face };
   };
@@ -1521,18 +1524,23 @@
     if (this.animT > (this.def.fly ? 5 : (this.t === 'mika' ? 6 : 10))) { this.animT = 0; this.anim ^= 1; }
 
     // Kontakt mit Yusuf
-    if (overlap(this, p) && !p.dead) {
-      // Auf dem Fahrrad wird nicht diskutiert. Beim Bauchrutscher auch nicht.
-      if (p.power > 0 || p.pound === -1 || p.rutsch > 0 || (g.lvl && g.lvl.bike)) {
-        // g.rutscher: wer jetzt umfaellt, fiel durch den Bauchrutscher (Auftraege)
-        g.rutscher = p.rutsch > 0 && p.power <= 0 && p.pound !== -1;
-        this.squash(g, p);
-        g.rutscher = false;
-      } else if (p.vy > 0.8 && p.feet() - this.y < 14) {
-        this.stomped(g, p);
-      } else {
-        p.hurt(g, 1, this.cx());
-      }
+    this.kontakt(g, p);
+  };
+
+  /** Beruehrt der Spieler den Gegner: draufspringen, umrempeln oder aua.
+      Zu zweit (koop.js) fragt das Spiel danach auch den anderen Spieler. */
+  Enemy.prototype.kontakt = function (g, p) {
+    if (this.dead || !p || p.dead || p.blase || !overlap(this, p)) return;
+    // Auf dem Fahrrad wird nicht diskutiert. Beim Bauchrutscher auch nicht.
+    if (p.power > 0 || p.pound === -1 || p.rutsch > 0 || (g.lvl && g.lvl.bike)) {
+      // g.rutscher: wer jetzt umfaellt, fiel durch den Bauchrutscher (Auftraege)
+      g.rutscher = p.rutsch > 0 && p.power <= 0 && p.pound !== -1;
+      this.squash(g, p);
+      g.rutscher = false;
+    } else if (p.vy > 0.8 && p.feet() - this.y < 14) {
+      this.stomped(g, p);
+    } else {
+      p.hurt(g, 1, this.cx());
     }
   };
 
@@ -1814,7 +1822,7 @@
     if (this.t === 'highlander') this.hp = 0;   // einen Stiefel auf dem Helm leugnet keiner
     this.flash = 8;
     global.Sound.play('stomp');
-    p.vy = global.Input.down('jump') ? -9.4 : -6.6;
+    p.vy = (p.eingabe || global.Input).down('jump') ? -9.4 : -6.6;
     p.jumpsLeft = 1;
     g.shake(3, 6);
     g.particles.burst(this.cx(), this.y + 4, 8,
@@ -2841,8 +2849,11 @@
   }
 
   function bossContact(b, g) {
+    // Zu zweit (koop.js): der Boss hat hier nach Beruehrungen geschaut —
+    // dann prueft das Spiel gleich danach auch den anderen Spieler
+    b.kontaktGeprueft = true;
     var p = g.player;
-    if (p.dead || b.invuln > 0 || b.state === 'transform' || !overlap(b, p)) return;
+    if (p.dead || p.blase || b.invuln > 0 || b.state === 'transform' || !overlap(b, p)) return;
     var stomp = p.vy > 0.5 && (p.feet() - b.y) < b.stompY;
     // Die Arschbombe macht nur halben Schaden. Vorher konnte man jeden
     // Boss einfach mit Bauch-Stampfern zuspammen und ueberrennen.

@@ -157,6 +157,7 @@
   };
   G.cameraTopY = function () { return G.cam.y - 20; };
   G.viewW = function () { return W; };
+  G.viewH = function () { return H; };
   G.showDialog = function (lines, after) { startDialog(lines, after); };
   /** Sprechblase ueber einer Figur, ohne das Spiel anzuhalten (Level 12). */
   G.talk = {};
@@ -348,6 +349,8 @@
     // Nach einem Tod kurz unverwundbar (blinkt), damit ein Gegner neben
     // dem Checkpoint nicht sofort das naechste Herz nimmt.
     if (respawn) G.player.invuln = BAL.SPIELER.UNVERWUNDBAR_RESPAWN;
+    // Zu zweit: Spieler 2 neben Yusuf (koop.js)
+    if (global.Koop) global.Koop.laden(G, lvl, respawn);
 
     // Das Modul erst jetzt starten — es braucht den fertigen Spieler
     G.modus = G.modMod ? G.modMod.init(G, lvl, respawn) : null;
@@ -622,6 +625,8 @@
       dem man war, und ein schon besiegter Boss kommt nicht wieder. */
   G.onPlayerDead = function () {
     var p = G.player;
+    // Zu zweit: lebt der andere noch, schwebt man in der Honigblase zu ihm (koop.js)
+    if (global.Koop && global.Koop.tod(G, p)) return;
     p.deaths = (p.deaths || 0) + 1;
     p.lives--;
     var alleWeg = p.lives <= 0;
@@ -714,6 +719,8 @@
       G.floats.add(p.cx(), p.y - 18, 'VOLLE HERZEN!', '#ff8a8a', 90);
       G.particles.burst(p.cx(), p.y + 8, 16, { col: '#ff6a8a', spread: 2.4, up: 1.2, life: 32 });
     }
+    // Zu zweit: der andere auch (koop.js)
+    if (global.Koop) global.Koop.heilen(G);
     startDialog(lines, function () { G.state = 'play'; });
   }
 
@@ -747,6 +754,7 @@
       p.cheer = 150; p.laughTimer = 80;
       G.floats.add(p.cx(), p.y - 30, 'BESIEGT!|HÖ HÖ HÖÖÖ', '#ffd257', 120);
     }
+    if (global.Koop) global.Koop.jubeln(G, false);
   }
 
   /** Aeltere Bosse waehlen ihre Angriffe rein zufaellig — der gleiche kam
@@ -1179,6 +1187,8 @@
   function update() {
     G.tick++;
     global.Input.poll();
+    // Zu zweit: in Fahr-Leveln und Minispielen steuert, wer dran ist (koop.js)
+    if (global.Koop) global.Koop.fokusTick(G);
     updateFade();
 
     runTimers();
@@ -1200,6 +1210,7 @@
 
     switch (G.state) {
       case 'title': updateTitle(); break;
+      case 'koop': global.Koop.menuUpdate(G); break;
       case 'select': updateSelect(); break;
       case 'howto': updateHowto(); break;
       case 'dialog': updateDialog(); updateWorld(); break;
@@ -1248,6 +1259,8 @@
     if (save.unlocked > 1) {
       items.push({ k: 'continue', label: 'WEITER AB LEVEL ' + (continueTarget() + 1) });
     }
+    // Die Geschichte zu zweit spielen (koop.js)
+    if (global.Koop) items.push({ k: 'koop', label: 'ZU ZWEIT', farbe: '#6fc8e8' });
     // Jeden Tag ein neues Level, fuer alle gleich (tageslauf.js) — ab Level 2
     if (global.Tageslauf && global.Tageslauf.verfuegbar() && save.unlocked > 1) {
       // Gold, solange der heutige Lauf noch fehlt
@@ -1289,13 +1302,19 @@
      benutzen dieselben Masse. */
   // Ab neun Eintraegen (Desktop mit WEITER und SHOP) etwas enger, damit
   // der letzte noch ueber dem Boden steht
-  function titleMenuStep(n) { return n > 8 ? 13 : 15; }
-  function titleMenuTop(n) { return Math.min(160 - (n - 5) * 9, 231 - (n - 1) * titleMenuStep(n)); }
+  // Mit ZU ZWEIT (koop.js) sind es bis zu zwoelf: dann noch enger, und nie
+  // hoeher als 110 (darueber steht der Untertitel)
+  function titleMenuStep(n) { return n > 11 ? 11 : (n > 10 ? 12 : (n > 8 ? 13 : 15)); }
+  function titleMenuTop(n) { return Math.max(110, Math.min(160 - (n - 5) * 9, 231 - (n - 1) * titleMenuStep(n))); }
   function titleBoardRect() { return { x: W - 158, y: 110, w: 150, h: 96 }; }
 
   function activateMenu(it) {
     S.resume();
     S.play('select');
+    if (it.k === 'koop') { global.Koop.oeffnen(G); return; }
+    // Was man hier startet, spielt man allein (zu zweit geht es ueber ZU ZWEIT)
+    if (global.Koop && (it.k === 'play' || it.k === 'continue' || it.k === 'select' ||
+                        it.k === 'tageslauf' || it.k === 'minis')) global.Koop.aus(G);
     if (it.k === 'play') startGame(0);
     else if (it.k === 'continue') startGame(continueTarget(), true);
     else if (it.k === 'select') { G.state = 'select'; G.selIdx = 0; }
@@ -1308,6 +1327,14 @@
     else if (it.k === 'optionen') global.Optionen.oeffnen(G, 'title');
     else if (it.k === 'beenden') beenden();
   }
+
+  /** Aus dem Menue ZU ZWEIT (koop.js): wie NEUES SPIEL, WEITER, LEVEL WÄHLEN. */
+  G.koopLos = function (k) {
+    if (k === 'play') startGame(0);
+    else if (k === 'continue') startGame(continueTarget(), true);
+    else if (k === 'select') { G.state = 'select'; G.selIdx = 0; }
+  };
+  G.koopWeiterZiel = function () { return save.unlocked > 1 ? continueTarget() : -1; };
 
   /* ================= Entwickler-Taste (nur mit entwickler.js) =================
      Esat, 25.10.: "wenn ich P druecke, ist die erste Mutation vom Boss sofort
@@ -1536,7 +1563,13 @@
   }
 
   function pauseButtons() {
-    return touchButtons(170, ['WEITER', 'EINSTELLUNGEN', 'HAUPTMENÜ']);
+    var l = ['WEITER', 'EINSTELLUNGEN', 'HAUPTMENÜ'];
+    // Mitten im Spiel einsteigen oder aussteigen (koop.js) — nicht im Tageslauf
+    if (koopErlaubt()) l.push(global.Koop.an() ? 'ALLEIN WEITER' : 'ZU ZWEIT');
+    return touchButtons(170, l);
+  }
+  function koopErlaubt() {
+    return !!(global.Koop && G.lvl && G.lvlIndex !== 'tag' && !G.tageslauf && !G.mini);
   }
 
   function toTitle() {
@@ -1577,6 +1610,10 @@
   function activatePause(i) {
     if (i === 0) resume();
     else if (i === 1) global.Optionen.oeffnen(G, 'paused');
+    else if (i === 3 && koopErlaubt()) {
+      if (global.Koop.an()) global.Koop.aus(G); else global.Koop.ein(G);
+      resume();
+    }
     else toTitle();
   }
 
@@ -1651,6 +1688,23 @@
     G.checkpointBlocks = snapshotBlocks();
   }
 
+  /** Steht ein Spieler am Checkpoint (zu zweit: einer von beiden)? */
+  function amCheckpoint(cx, cy) {
+    var l = global.Koop ? global.Koop.aktive(G) : [G.player];
+    for (var i = 0; i < l.length; i++) {
+      var q = l[i];
+      if (Math.abs(q.cx() - (cx + 12)) < 26 && Math.abs(q.feet() - cy) < 40) return true;
+    }
+    return false;
+  }
+
+  /** Wie weit es nach rechts geht (zu zweit: der Vordere). */
+  function weitesterX() {
+    var l = global.Koop ? global.Koop.aktive(G) : [G.player], x = -1e9;
+    for (var i = 0; i < l.length; i++) x = Math.max(x, l[i].cx());
+    return x;
+  }
+
   /** Entfernt Einträge aus einer Liste — nur ausserhalb eines Durchlaufs. */
   function sweep(list, isGone) {
     for (var i = list.length - 1; i >= 0; i--) {
@@ -1659,7 +1713,10 @@
   }
 
   function updateWorld() {
+    // Zu zweit steht G.player nur kurz auf Spieler 2 — hier wieder auf Yusuf
+    if (global.Koop) global.Koop.zurueck(G);
     var p = G.player, i;
+    var koop = !!(global.Koop && global.Koop.an() && global.Koop.p2());
     if (global.Fress) global.Fress.update(G);
     // Level 8 hat seine eigene Welt (Couch, Schreibtisch, Essen)
     if (G.scene) { sceneMod().update(G, W, H); return; }
@@ -1677,12 +1734,15 @@
     var frozen = G.frozen;
 
     if (!frozen) G.world.updateMovers();
-    p.update(G);
+    // Zu zweit kann Yusuf in der Honigblase stecken — dann bewegt die ihn (koop.js)
+    if (!(koop && global.Koop.vorher(G, p))) p.update(G);
     // Laufzyklus, Salto, Federn, Kante, Langeweile — nur fuers Aussehen (animation.js)
     if (global.Anim) global.Anim.tick(G);
     // Staub, Stauchen, Aura-Farming, Grabsteine (spass.js)
     if (global.Spass && !frozen) global.Spass.tick(G);
     if (global.Shop && !frozen) global.Shop.tick(G);
+    // Spieler 2: bewegen, nicht zu weit weg, Honigblase (koop.js)
+    if (koop) global.Koop.zweiter(G);
 
     if (G.comboTimer > 0) { G.comboTimer--; if (G.comboTimer === 0) G.combo = 0; }
     if (p.grounded) G.comboTimer = Math.min(G.comboTimer, 20);
@@ -1710,18 +1770,29 @@
         var near = (e.x > G.cam.x - 160 && e.x < G.cam.x + W + 160);
         // Ansturm-Mikas laufen auch ausserhalb des Bildes weiter — sonst
         // bleiben sie am Rand der Arena stehen und kommen nie an.
-        if (near || e.dead || e.stampede) e.update(G);
+        if (near || e.dead || e.stampede) {
+          // Zu zweit: der Gegner kuemmert sich um den, der naeher ist —
+          // danach darf auch der andere draufspringen (koop.js)
+          if (koop) G.player = global.Koop.naechster(G, e);
+          e.update(G);
+          if (koop) { global.Koop.gegnerKontakt(G, e); G.player = p; }
+        }
       }
       for (i = G.items.length - 1; i >= 0; i--) {
         var it = G.items[i];
         if (!it) continue;
-        if (it.x > G.cam.x - 120 && it.x < G.cam.x + W + 120) it.update(G);
+        if (it.x > G.cam.x - 120 && it.x < G.cam.x + W + 120) {
+          if (koop) G.player = global.Koop.naechster(G, it);
+          it.update(G);
+        }
       }
       for (i = G.projectiles.length - 1; i >= 0; i--) {
         var pr = G.projectiles[i];
         if (!pr) continue;
+        if (koop) G.player = global.Koop.naechster(G, pr);
         pr.update(G);
       }
+      G.player = p;
     }
     // Auch im Dialog aufraeumen: dort werden Geschosse nur als "weg"
     // markiert und sollen nicht eingefroren sichtbar bleiben.
@@ -1739,8 +1810,7 @@
     var cps = G.lvl.checkpoints;
     for (i = 0; i < cps.length; i++) {
       var cx = cps[i][0] * T, cy = cps[i][1] * T;
-      if (!G.checkpointsHit[i] &&
-          Math.abs(p.cx() - (cx + 12)) < 26 && Math.abs(p.feet() - cy) < 40) {
+      if (!G.checkpointsHit[i] && amCheckpoint(cx, cy)) {
         G.checkpointsHit[i] = true;
         G.checkpoint = cps[i];
         saveCheckpointState();
@@ -1754,8 +1824,8 @@
     if (global.Strecke && !frozen && !G.cut) global.Strecke.update(G);
     if (global.Wachsam && !frozen) global.Wachsam.tick(G);
 
-    // Boss auslösen
-    if (G.arena && !G.bossStarted && p.cx() > G.arena.x + 56) {
+    // Boss auslösen (zu zweit: wer zuerst reinläuft)
+    if (G.arena && !G.bossStarted && weitesterX() > G.arena.x + 56) {
       G.bossStarted = true;
       // Kein Banner ueber einem laufenden Bosskampf
       G.banner = 0;
@@ -1815,6 +1885,8 @@
       // Energie und Verschnaufpausen je nach Schwierigkeitsgrad (balance.js)
       BAL.bossAnpassen(G.boss, bt);
       keineWiederholung(G.boss);
+      // Zu zweit: wer noch vor der Arena steht, kommt mit rein (koop.js)
+      if (global.Koop) global.Koop.bossStart(G, G.boss);
       // Halbzeit-Checkpoint: wer nach der Verwandlung stirbt, faengt
       // nicht wieder bei voller Energie an. Mehr Leben pro Boss ist nur
       // fair, wenn man die erste Haelfte nicht immer wiederholen muss.
@@ -1876,18 +1948,24 @@
     // Der Boss bewegt sich im Dialog nicht — nur seine Todesanimation läuft weiter.
     // Und seine Verwandlung, waehrend die Welt dafuer stillsteht (bosskino.js).
     var vwBoss = G.verwandlung && G.verwandlung.los && G.boss && G.boss.state === 'transform';
-    if (G.boss && (!frozen || G.boss.dead || vwBoss)) G.boss.update(G);
+    if (G.boss && (!frozen || G.boss.dead || vwBoss)) {
+      // Zu zweit: der Boss nimmt sich den Naeheren vor, treffen koennen ihn beide (koop.js)
+      if (koop) global.Koop.bossUpdate(G); else G.boss.update(G);
+    }
 
     // Ziel
-    if (!p.won && !p.dead) {
+    if (!p.won && !(p.dead && !koop)) {
       var gx = G.lvl.goal[0] * T, gy = G.lvl.goal[1] * T;
       // Mirkan, Lennart und Erfan geben nur den Weg frei. Alle anderen
       // Bosse beenden das Level selbst (Abspann, Szene, naechstes Level).
       var canFinish = !G.lvl.boss || (E.MINIBOSS[G.lvl.bossType] && G.bossCleared);
-      if (canFinish && Math.abs(p.cx() - (gx + 12)) < 30 &&
-          p.feet() > gy - 60 && p.feet() < gy + 40) {
-        finishLevel();
+      // Zu zweit: es reicht, wenn einer ankommt
+      var amZiel = false, zs = koop ? global.Koop.aktive(G) : [p];
+      for (var zi = 0; zi < zs.length; zi++) {
+        var zp = zs[zi];
+        if (!zp.dead && Math.abs(zp.cx() - (gx + 12)) < 30 && zp.feet() > gy - 60 && zp.feet() < gy + 40) amZiel = true;
       }
+      if (canFinish && amZiel) finishLevel();
     }
 
     G.particles.update();
@@ -1906,6 +1984,8 @@
     var p = G.player;
     p.won = true;
     p.cheer = 200;
+    // Zu zweit: beide sind angekommen (auch wer gerade in der Blase steckt)
+    if (global.Koop) global.Koop.jubeln(G, true);
     G.frozen = true;
     S.play('win');
     G.particles.burst(p.cx(), p.y, 40,
@@ -2340,6 +2420,9 @@
     var p = G.player, cam = G.cam;
     var tx = p.cx() - W / 2 + p.facing * 26;
     var ty = p.y + p.h / 2 - H / 2 - 10;
+    // Zu zweit: beide im Bild (koop.js)
+    var kz = global.Koop ? global.Koop.kamera(G) : null;
+    if (kz) { tx = kz.x - W / 2; ty = kz.y - H / 2 - 10; }
     // Zwischensequenz: die Kamera schaut woanders hin (Lennart)
     if (G.camFocus) {
       tx = G.camFocus.x - W / 2;
@@ -2380,6 +2463,7 @@
     ctx.clearRect(0, 0, W, H);
 
     if (G.state === 'title') { drawTitle(); }
+    else if (G.state === 'koop') { drawTitle(); global.Koop.menuDraw(ctx, G, W, H); }
     else if (G.state === 'select') { drawSelect(); }
     else if (G.state === 'howto') { drawHowto(); }
     else if (G.state === 'ending') { drawEnding(); }
@@ -2418,6 +2502,8 @@
 
     // Trophaeen, Rang, "so knapp": immer ganz oben
     if (global.Spass) global.Spass.drawOben(ctx, G, W, H);
+    // Zu zweit: wer im Fahr-Level / Minispiel dran ist (koop.js)
+    if (global.Koop) global.Koop.oben(ctx, G, W, H);
     if (global.Entwickler && global.Entwickler.an()) {
       rect(W - 26, H - 11, 24, 9, 'rgba(255,74,138,0.85)');
       F.draw(ctx, 'DEV', W - 14, H - 10, { color: '#ffffff', align: 'center' });
@@ -3471,11 +3557,14 @@
     if (global.Spass) global.Spass.drawWelt(ctx, G, camX, camY);
     // Level 25: die Security (und der Hund)
     if (G.jagd && global.Reise) global.Reise.jagdDraw(ctx, G, camX, camY);
-    // Der Kumpel hinter Yusuf (Level 14, 15, 22)
-    if (G.rider && G.rider.pos) drawRider(camX, camY);
+    // Der Kumpel hinter Yusuf (Level 14, 15, 22) — ausser Spieler 2 ist er selbst (koop.js)
+    if (G.rider && G.rider.pos && !(global.Koop && global.Koop.istKumpel(G))) drawRider(camX, camY);
     // Tageslauf: der beste Lauf von heute als Geist (tageslauf.js)
     if (G.lvlIndex === 'tag' && global.Tageslauf) global.Tageslauf.drawGeist(ctx, G, camX, camY);
+    // Zu zweit: erst Spieler 2, Yusuf steht davor (koop.js)
+    if (global.Koop) global.Koop.zeichnen(ctx, G, camX, camY, drawPlayer);
     drawPlayer(camX, camY);
+    if (global.Koop) global.Koop.zeichen(ctx, G, camX, camY);
     // Vor den Fuessen: Grasbueschel (wehen im Wind, weichen Yusuf aus), Regenspritzer
     if (global.Gelaende) global.Gelaende.vorne(ctx, G, camX, camY, W, H);
     // Falsche Waende liegen VOR Yusuf (er verschwindet dahinter, bis sie verblassen)
@@ -3723,6 +3812,10 @@
       // Hoehen gestaffelt: der Kumpel faehrt direkt hinter Yusuf —
       // sonst ueberdecken sich die Blasen.
       if (who === 'yusuf') { x = p.cx(); y = p.y - 22; }
+      // Zu zweit spielt Spieler 2 den Kumpel: dann redet er (koop.js)
+      else if (global.Koop && global.Koop.istKumpel(G) && who === G.lvl.buddy) {
+        var k2 = global.Koop.p2(); x = k2.cx(); y = k2.y - 36;
+      }
       else if (who === (G.lvl.buddy || 'esat') && G.rider && G.rider.pos) {
         x = G.rider.pos.x; y = G.rider.pos.y - (who === 'sonnet' ? 68 : 66);
       }
@@ -3833,14 +3926,19 @@
 
   function drawPlayer(camX, camY) {
     var p = G.player;
+    // Zu zweit: wer gestorben ist, schwebt in der Honigblase (koop.js)
+    if (p.blase && global.Koop) { global.Koop.blaseMalen(ctx, G, p, camX, camY); return; }
     if (p.invuln > 0 && (G.tick >> 1) % 2 === 0 && !p.dead) return;
+    // Spieler 2 ist ein Kumpel (koop.js), Yusuf traegt beim Airsoft die Weste
+    var zwei = p.nr === 2 && global.Koop;
 
     // Auf dem Fahrrad (Level 22). Beim Salto dreht sich alles mit.
     if (G.lvl.bike && !p.dead) {
       var bps = p.pose();
       var bface = p.flipping ? 'laugh' : bps.face;
       var blift = p.grounded ? rampLift(p.cx(), p.feet()) : 0;
-      drawBikeRider('yusuf', G.lvl.bikeSpr || 'bike', p.cx() - camX, p.feet() - camY - blift, p.facing < 0,
+      drawBikeRider(zwei ? global.Koop.wer(G, p) : 'yusuf', zwei ? 'bike_e' : (G.lvl.bikeSpr || 'bike'),
+                    p.cx() - camX, p.feet() - camY - blift, p.facing < 0,
                     p.flipping ? p.flipA : 0, p.x, bface);
       if (p.sleeping) {
         for (var zi = 0; zi < 3; zi++) {
@@ -3890,7 +3988,7 @@
     // Erinnerung ist Yusuf wieder klein.
     var fm = global.Spass ? global.Spass.form(G) : { sx: 1, sy: 1 };
     var klein = G.klein || 1;
-    var wer = G.lvl.airsoft ? 'yusuf_as' : 'yusuf';
+    var wer = zwei ? global.Koop.wer(G, p) : (G.lvl.airsoft ? 'yusuf_as' : 'yusuf');
     // Salto, Ueberschlag, Kippen, Huepfen: dreht Figur, Waffe und Tueten mit
     ctx.save();
     if (an) global.Anim.anwenden(ctx, an, p, camX, camY);
@@ -3906,19 +4004,19 @@
       ctx.scale(fm.sx * klein, fm.sy * klein);
       opts.teil = 'koerper';
       P.drawChar(ctx, wer, 0, 0, opts);
-      if (global.Shop) global.Shop.licht(ctx, G, { pose: opts.pose, frame: opts.frame, flip: opts.flip, hut: null });
+      if (global.Shop && !zwei) global.Shop.licht(ctx, G, { pose: opts.pose, frame: opts.frame, flip: opts.flip, hut: null });
       ctx.restore();
       if (kl) ctx.translate(Math.round(p.facing * 9 - kl.kx), Math.round(-14 - kl.ky));
       ctx.scale(klein, klein);
       opts.teil = 'kopf';
       P.drawChar(ctx, wer, 0, 0, opts);
-      if (global.Shop) global.Shop.licht(ctx, G, { pose: opts.pose, frame: opts.frame, flip: opts.flip, kostuem: null });
+      if (global.Shop && !zwei) global.Shop.licht(ctx, G, { pose: opts.pose, frame: opts.frame, flip: opts.flip, kostuem: null });
       opts.teil = null;
     } else {
       ctx.scale(fm.sx * klein, fm.sy * klein);
       P.drawChar(ctx, wer, 0, 0, opts);
       // Heiligenschein, Krone, Gold-Jogger ... leuchten und funkeln (shop.js)
-      if (global.Shop && !p.dead) global.Shop.licht(ctx, G, opts);
+      if (global.Shop && !p.dead && !zwei) global.Shop.licht(ctx, G, opts);
     }
     ctx.restore();
     // Nunchaku, Messer, Schwert, Saebel in der Hand — mit Schlagspur (waffen.js)
@@ -3935,8 +4033,8 @@
       }
     }
 
-    // Level 10: sechs Tueten. Mindestens.
-    if (G.lvl.bags && !p.dead) {
+    // Level 10: sechs Tueten. Mindestens. (Yusufs Einkauf — Spieler 2 traegt nichts)
+    if (G.lvl.bags && !p.dead && !zwei) {
       var bgx = Math.round(p.cx() - camX), bgy = Math.round(p.feet() - camY);
       P.draw(ctx, 'tuete', bgx - 17, bgy - 15);
       P.draw(ctx, 'tuete', bgx + 7, bgy - 13);
@@ -4506,8 +4604,9 @@
              { color: '#fff0a0', shadow: true });
     }
 
-    // Leben
-    F.draw(ctx, 'YUSUF x' + Math.max(0, p.lives), 8, 44, { color: '#f4bd91', shadow: true });
+    // Leben (zu zweit gehoeren sie beiden)
+    var zuZweit = !!(global.Koop && global.Koop.p2());
+    F.draw(ctx, (zuZweit ? 'LEBEN x' : 'YUSUF x') + Math.max(0, p.lives), 8, 44, { color: '#f4bd91', shadow: true });
 
     if (G.lvl.bike) {
       // Level 12: wie viele Saltos er schon gestanden hat
@@ -4574,6 +4673,8 @@
              { color: bestT && G.time > bestT ? '#ff8a7a' : '#8ae07a', align: 'center', shadow: true });
     }
     if (global.Spass) global.Spass.hud(ctx, G, rx, 32);
+    // Zu zweit: Herzen und Puste von Spieler 2 darunter (koop.js)
+    if (zuZweit) global.Koop.hud(ctx, G, rx);
 
     // Gold-Döner-Balken
     if (p.power > 0) {
@@ -5039,6 +5140,8 @@
     F.draw(ctx, 'LEVEL WÄHLEN', W / 2, 24, {
       color: '#ffd257', align: 'center', scale: 3, shadow: true
     });
+    // Ueber das Menue ZU ZWEIT hierher gekommen (koop.js)
+    if (global.Koop && global.Koop.an()) F.draw(ctx, 'ZU ZWEIT', W - 8, 8, { color: '#6fc8e8', align: 'right', shadow: true });
 
     // Karten passen sich der Breite an — bei 7 Leveln war die letzte
     // Karte vorher halb abgeschnitten. Ab elf Leveln: zwei Reihen.
@@ -5269,11 +5372,11 @@
     var l = G.lvl, sc = G.scene, h = null;
     if (!l) return null;
     if (sc && sc.type === 'schlaf') h = sc.phase === 'traum' ? 'SPRUNG = MIT DEM BAUCH FLATTERN. BROKKOLI AUSWEICHEN.' : 'SPRUNG = VORSPULEN.';
-    else if (sc && sc.type === 'shisha') h = 'SPRUNG HALTEN = ZIEHEN, IN DER ZONE LOSLASSEN. JEDE ZONE = EIN RING. ESAT IN SEINER ZONE: RUNTER = RÜLPSEN.';
-    else if (sc && sc.type === 'kasse') h = 'A / S / D = SCHWER / KÜHL / ZART. W = OMAS SACHEN ZURÜCK.';
-    else if (sc && sc.type === 'mahl' && sc.kind === 'taverne') h = 'OMA LEGT VOR, DU ISST NACH: SPRUNG = BEISSEN, RUNTER = TUNKEN. IM SELBEN RHYTHMUS.';
-    else if (sc && sc.type === 'mahl' && sc.kind === 'galata') h = 'SPRUNG HALTEN = AUSHOLEN UND DRILLEN. SPRUNG = ANHAUEN. LINKS / RECHTS = MÖWEN.';
-    else if (sc && sc.type === 'mahl') h = 'SPRUNG = ABBEISSEN, SO SCHNELL DU KANNST. EXTRA SCHARF? RUNTER = AYRAN.';
+    else if (sc && sc.type === 'shisha') h = 'SCHILD GRÜN = SOFORT SPRUNG. ZU FRÜH = RUNDE WEG. GELB UND "JETZT!" SIND FINTEN.';
+    else if (sc && sc.type === 'kasse') h = 'LINKS / RECHTS = LAUFEN UND FANGEN. LILA (OMAS SACHEN) NICHT FANGEN.';
+    else if (sc && sc.type === 'mahl' && sc.kind === 'taverne') h = 'SPRUNG = SELBST ESSEN (DAUERT). RUNTER = DER KATZE GEBEN - NUR WENN OMA WEGSCHAUT. HM? = AUFHÖREN.';
+    else if (sc && sc.type === 'mahl' && sc.kind === 'galata') h = 'SPRUNG HALTEN = ZIELEN, LOSLASSEN = WERFEN. BEIM ! ANHAUEN. HALTEN = EINHOLEN. SPRITZT ES: SOFORT LOSLASSEN.';
+    else if (sc && sc.type === 'mahl') h = 'ERST WENN DIE FOLIE AUF IST: SPRUNG = ABBEISSEN, RUNTER = SALAT RAUS (AUF ESAT).';
     else if (l.eat) h = 'ESSEN MIT DER MAUS ZU YUSUF ZIEHEN. ODER PFEILE + SPRUNG.';
     else if (l.mode === 'fussball') h = 'SHIFT / E = SCHUSS. REINSPRINGEN = KOPFBALL. STAMPFER = BAUCHSCHUSS.';
     else if (l.mode === 'rennen') h = 'PFEILE = LENKEN. SPRUNG = NITRO. RUNTER = BREMSEN.';

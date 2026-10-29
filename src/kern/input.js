@@ -108,7 +108,76 @@
     if (v && !held[a]) { pressed[a] = true; anyPressed = true; }
     if (!v && held[a]) released[a] = true;
     held[a] = v;
+    if (kbP) recomputeP(1, a);
   }
+
+  /* ---------------- Zu zweit (koop.js) ----------------
+     Im Koop-Modus hat jeder Spieler seine eigenen Tasten. Ohne Controller
+     teilen sich beide die Tastatur: Spieler 1 links (A D, Leertaste, Shift,
+     Strg), Spieler 2 rechts (Pfeile, dazu , . - unten rechts). Ist EIN
+     Controller da, gehoert er Spieler 2 und Spieler 1 hat die ganze
+     Tastatur. Bei zwei Controllern hat jeder einen.
+     Input.hit/down sehen weiter ALLE Geraete — Menues und Dialoge kann
+     jeder bedienen. Input.spieler(n) liest nur die Geraete von Spieler n. */
+  var KOOP_TASTEN = {
+    1: {
+      KeyA: ['left'], KeyD: ['right'], KeyW: ['up', 'gas'], KeyS: ['down'],
+      Space: ['jump', 'hopp'],
+      ShiftLeft: ['run', 'throw', 'nitro'], KeyE: ['throw'], KeyF: ['throw'], KeyX: ['throw'], KeyQ: ['throw'],
+      KeyC: ['puff', 'stampf'], ControlLeft: ['stampf'], KeyR: ['laden']
+    },
+    2: {
+      ArrowLeft: ['left'], ArrowRight: ['right'], ArrowUp: ['up', 'jump', 'gas'], ArrowDown: ['down'],
+      // Die drei Tasten links neben Shift rechts: , = Arschbombe, . = Schlag, - = Sprung
+      Slash: ['jump', 'hopp'], Period: ['run', 'throw', 'nitro'], Comma: ['stampf', 'puff'],
+      ShiftRight: ['run', 'throw', 'nitro'], ControlRight: ['stampf', 'puff'], KeyL: ['laden'],
+      Numpad0: ['jump', 'hopp'], NumpadDecimal: ['run', 'throw', 'nitro']
+    }
+  };
+  // Was in den Fahr-Leveln und Minispielen nur der Spieler steuert, der dran ist
+  var FOKUS = { left: 1, right: 1, up: 1, down: 1, jump: 1, run: 1, throw: 1, puff: 1,
+                gas: 1, hopp: 1, nitro: 1, stampf: 1, laden: 1 };
+  var kbP = { 1: {}, 2: {} }, padP = { 1: {}, 2: {} };
+  var heldP = { 1: {}, 2: {} }, pressedP = { 1: {}, 2: {} }, releasedP = { 1: {}, 2: {} };
+  var keysDownP = {};     // Taste -> [[spieler, aktionen], ...] (so wie beim Druecken verteilt)
+  var koopAn = false, padsDa = 0, fokusN = null;
+
+  ACTIONS.forEach(function (a) {
+    [1, 2].forEach(function (n) {
+      kbP[n][a] = 0; padP[n][a] = false;
+      heldP[n][a] = false; pressedP[n][a] = false; releasedP[n][a] = false;
+    });
+  });
+
+  function recomputeP(n, a) {
+    var v = kbP[n][a] > 0 || padP[n][a] ||
+            (n === 1 && (touchCount[a] > 0 || tapOn[a] > 0 || (a === 'throw' && mausAn)));
+    if (v && !heldP[n][a]) pressedP[n][a] = true;
+    if (!v && heldP[n][a]) releasedP[n][a] = true;
+    heldP[n][a] = v;
+  }
+
+  /** Wem eine Taste gehoert: [[spieler, aktionen], ...]. Allein (oder wenn
+      Spieler 2 einen Controller hat) gehoert die ganze Tastatur Spieler 1. */
+  function verteilung(code) {
+    if (!koopAn || padsDa >= 1) return KEYMAP[code] ? [[1, KEYMAP[code]]] : [];
+    var out = [];
+    if (KOOP_TASTEN[1][code]) out.push([1, KOOP_TASTEN[1][code]]);
+    if (KOOP_TASTEN[2][code]) out.push([2, KOOP_TASTEN[2][code]]);
+    return out;
+  }
+
+  /** Steuerung eines Spielers — dieselben Abfragen wie Input selbst. */
+  function steuerung(n) {
+    return {
+      n: n,
+      hit: function (a) { return !!pressedP[n][a]; },
+      down: function (a) { return !!heldP[n][a]; },
+      up: function (a) { return !!releasedP[n][a]; },
+      axis: function () { return (heldP[n].right ? 1 : 0) - (heldP[n].left ? 1 : 0); }
+    };
+  }
+  var STEUER = { 1: steuerung(1), 2: steuerung(2) };
 
   /* ---------------- Tastatur ---------------- */
 
@@ -128,30 +197,54 @@
       return;
     }
     var acts = KEYMAP[e.code];
-    if (!acts) return;
+    // Zu zweit: auch Tasten, die nur Spieler 2 hat (, . - L ...)
+    var vt = verteilung(e.code);
+    if (!acts && !vt.length) return;
     // Scrollen und Seitensprünge unterdrücken. Mit STRG (Arschbombe) auch die
     // Browser-Kuerzel: STRG+D waere sonst ein Lesezeichen, STRG+S Speichern.
-    if (e.code === 'Space' || e.code.indexOf('Arrow') === 0 || e.ctrlKey) e.preventDefault();
+    // Im Koop auch / (Firefox: Schnellsuche).
+    if (e.code === 'Space' || e.code.indexOf('Arrow') === 0 || e.ctrlKey || (koopAn && vt.length)) e.preventDefault();
     if (e.repeat || keysDown[e.code]) return;
     keysDown[e.code] = true;
     quelle = 'tasten';
-    for (var i = 0; i < acts.length; i++) { kbCount[acts[i]]++; recompute(acts[i]); }
+    var i, j;
+    if (acts) for (i = 0; i < acts.length; i++) { kbCount[acts[i]]++; recompute(acts[i]); }
+    keysDownP[e.code] = vt;
+    for (i = 0; i < vt.length; i++) {
+      for (j = 0; j < vt[i][1].length; j++) { kbP[vt[i][0]][vt[i][1][j]]++; recomputeP(vt[i][0], vt[i][1][j]); }
+    }
   }, { passive: false });
 
   global.addEventListener('keyup', function (e) {
     if (typingInField(e)) return;
     var acts = KEYMAP[e.code];
-    if (!acts || !keysDown[e.code]) return;
+    if (!keysDown[e.code]) return;
     delete keysDown[e.code];
-    for (var i = 0; i < acts.length; i++) {
-      kbCount[acts[i]] = Math.max(0, kbCount[acts[i]] - 1);
-      recompute(acts[i]);
+    var i, j;
+    if (acts) {
+      for (i = 0; i < acts.length; i++) {
+        kbCount[acts[i]] = Math.max(0, kbCount[acts[i]] - 1);
+        recompute(acts[i]);
+      }
+    }
+    var vt = keysDownP[e.code] || [];
+    delete keysDownP[e.code];
+    for (i = 0; i < vt.length; i++) {
+      for (j = 0; j < vt[i][1].length; j++) {
+        var n = vt[i][0], a = vt[i][1][j];
+        kbP[n][a] = Math.max(0, kbP[n][a] - 1);
+        recomputeP(n, a);
+      }
     }
   });
 
   function releaseKeyboard() {
     keysDown = {};
-    ACTIONS.forEach(function (a) { kbCount[a] = 0; recompute(a); });
+    keysDownP = {};
+    ACTIONS.forEach(function (a) {
+      kbCount[a] = 0; kbP[1][a] = 0; kbP[2][a] = 0;
+      recompute(a); recomputeP(2, a);
+    });
   }
 
   // Beim Fokusverlust alles loslassen, sonst rennt Yusuf für immer weiter.
@@ -308,24 +401,49 @@
      Mit einer einzigen Schwelle hat ein leicht driftender Stick jeden
      Frame zwischen gedrueckt und losgelassen gewechselt. */
   var PAD_AN = 0.5, PAD_AUS = 0.3;
-  var stick = { left: false, right: false, up: false, down: false };
+  var sticks = {};   // je Controller (Index) ein Stick mit eigener Hysterese
 
-  function achse(v, neg, pos) {
+  function achse(stick, v, neg, pos) {
     if (v === undefined) { stick[neg] = false; stick[pos] = false; return; }
     stick[neg] = stick[neg] ? v < -PAD_AUS : v < -PAD_AN;
     stick[pos] = stick[pos] ? v > PAD_AUS : v > PAD_AN;
   }
 
+  /* Alle angeschlossenen Controller. Gemeinsam (Menues, allein spielen)
+     zaehlt jeder; zu zweit gehoert einer Spieler 2, bei zweien jedem einer. */
   function pollPad() {
-    var p = null;
+    var liste = [];
     if (navigator.getGamepads) {
       var pads = navigator.getGamepads();
-      for (var i = 0; i < pads.length; i++) if (pads[i] && pads[i].connected) { p = pads[i]; break; }
+      for (var i = 0; i < pads.length; i++) if (pads[i] && pads[i].connected) liste.push(pads[i]);
     }
+    padsDa = liste.length;
+    var staende = liste.map(padStand), st = {};
+    staende.forEach(function (s) { for (var a in s) if (s[a]) st[a] = true; });
+    ACTIONS.forEach(function (a) {
+      var v = !!st[a];
+      if (v !== padOn[a]) { padOn[a] = v; recompute(a); if (v) quelle = 'pad'; }
+    });
+    var zu = { 1: null, 2: null };
+    if (!koopAn) zu[1] = st;
+    else if (staende.length >= 2) { zu[1] = staende[0]; zu[2] = staende[1]; }
+    else if (staende.length === 1) zu[2] = staende[0];
+    [1, 2].forEach(function (n) {
+      var s = zu[n] || {};
+      ACTIONS.forEach(function (a) {
+        var v = !!s[a];
+        if (v !== padP[n][a]) { padP[n][a] = v; recomputeP(n, a); }
+      });
+    });
+  }
+
+  /** Was ein Controller gerade drueckt, als Aktionen. */
+  function padStand(p) {
+    var stick = sticks[p.index] || (sticks[p.index] = { left: false, right: false, up: false, down: false });
     var st = {};
     if (p) {
-      achse(p.axes[0], 'left', 'right');
-      achse(p.axes[1], 'up', 'down');
+      achse(stick, p.axes[0], 'left', 'right');
+      achse(stick, p.axes[1], 'up', 'down');
       st = {
         left: stick.left || btn(p, 14),
         right: stick.right || btn(p, 15),
@@ -348,10 +466,7 @@
         back: btn(p, 1) || btn(p, 8)
       };
     }
-    ACTIONS.forEach(function (a) {
-      var v = !!st[a];
-      if (v !== padOn[a]) { padOn[a] = v; recompute(a); if (v) quelle = 'pad'; }
-    });
+    return st;
   }
 
   function btn(p, i) { return !!(p.buttons[i] && p.buttons[i].pressed); }
@@ -359,7 +474,11 @@
   /* ---------------- API ---------------- */
 
   function endFrame() {
-    ACTIONS.forEach(function (a) { pressed[a] = false; released[a] = false; });
+    ACTIONS.forEach(function (a) {
+      pressed[a] = false; released[a] = false;
+      pressedP[1][a] = false; releasedP[1][a] = false;
+      pressedP[2][a] = false; releasedP[2][a] = false;
+    });
     anyPressed = false;
     tapPos = null;
     ptr.justDown = false; ptr.justUp = false;
@@ -370,22 +489,49 @@
     mausAn = false;
     releaseKeyboard();
     Object.keys(touchState).forEach(function (k) { setKey(k, false); });
-    ACTIONS.forEach(function (a) { padOn[a] = false; tapOn[a] = 0; recompute(a); });
+    ACTIONS.forEach(function (a) {
+      padOn[a] = false; tapOn[a] = 0; recompute(a);
+      padP[1][a] = false; padP[2][a] = false;
+      recomputeP(1, a); recomputeP(2, a);
+    });
   }
+
+  /* Zu zweit in einem Fahr-Level oder Minispiel: dann steuert nur, wer
+     dran ist (fokusN). Menue-Tasten (Pause, Bestaetigen) bleiben fuer alle. */
+  function gefiltert(a) { return fokusN && FOKUS[a]; }
 
   var api = global.Input = {
     init: function (canvas) { bindTouch(); bindScreenTap(canvas); bindPointer(canvas); },
     poll: pollPad,
-    down: function (a) { return !!held[a]; },
-    hit: function (a) { return !!pressed[a]; },
-    up: function (a) { return !!released[a]; },
+    down: function (a) { return gefiltert(a) ? !!heldP[fokusN][a] : !!held[a]; },
+    hit: function (a) { return gefiltert(a) ? !!pressedP[fokusN][a] : !!pressed[a]; },
+    up: function (a) { return gefiltert(a) ? !!releasedP[fokusN][a] : !!released[a]; },
     anyHit: function () {
       for (var i = 0; i < ACTIONS.length; i++) if (pressed[ACTIONS[i]]) return true;
       return false;
     },
     axis: function () {
+      if (fokusN) return STEUER[fokusN].axis();
       return (held.right ? 1 : 0) - (held.left ? 1 : 0);
     },
+    /* ---- Zu zweit (koop.js) ---- */
+    /** Koop an/aus: verteilt Tastatur und Controller auf zwei Spieler. */
+    koop: function (an) {
+      an = !!an;
+      if (an === koopAn) return;
+      koopAn = an; fokusN = null;
+      releaseKeyboard();
+    },
+    koopAn: function () { return koopAn; },
+    /** Steuerung von Spieler n (1 oder 2): nur seine Tasten und sein Controller. */
+    spieler: function (n) { return STEUER[n === 2 ? 2 : 1]; },
+    /** Teilen sich beide gerade die Tastatur (kein Controller da)? */
+    geteilt: function () { return koopAn && padsDa === 0; },
+    /** Wie viele Controller angeschlossen sind (beim letzten poll). */
+    padZahl: function () { return padsDa; },
+    /** Nur Spieler n steuert das Spiel (Fahr-Level, Minispiele); null = alle. */
+    fokus: function (n) { fokusN = (koopAn && (n === 1 || n === 2)) ? n : null; },
+    fokusAuf: function () { return fokusN; },
     /** Wo in diesem Frame aufs Bild getippt wurde (oder null). */
     tap: function () { return tapPos; },
     /** Maus-/Fingerzeiger auf dem Bild: {x, y, down, justDown, justUp}. */

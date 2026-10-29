@@ -122,17 +122,16 @@
   };
   for (var k in POSEN) P.POSES[k] = POSEN[k];
 
-  /* ---------------- Zustand (nur fuer G.player) ---------------- */
+  /* ---------------- Zustand (je Spieler: G.player, zu zweit auch Spieler 2) ---------------- */
 
-  var st = null;
   function zustand(G) {
     var p = G.player;
-    if (!st || st.p !== p) {
-      st = { p: p, phase: 0, luft: 0, warBoden: true, vyAlt: 0, poundAlt: 0, sprAlt: 2,
-             s: 0, v: 0, saltoT: 0, saltoDir: 1, landT: 0, schiebT: 0, warTot: false, todDreh: false,
-             bremst: false, schiebt: false, wandT: 0, wandDir: 0, kante: 0, zufall: 20261028 };
+    if (!p.animSt) {
+      p.animSt = { p: p, phase: 0, luft: 0, warBoden: true, vyAlt: 0, poundAlt: 0, sprAlt: 2,
+                   s: 0, v: 0, saltoT: 0, saltoDir: 1, landT: 0, schiebT: 0, warTot: false, todDreh: false,
+                   bremst: false, schiebt: false, wandT: 0, wandDir: 0, kante: 0, zufall: 20261028 };
     }
-    return st;
+    return p.animSt;
   }
 
   // Eigene Zufallsfolge: Staub darf den Spiel-Zufall (Math.random) nicht verschieben
@@ -144,7 +143,8 @@
   function achse(G) {
     if (G.autoAx !== null && G.autoAx !== undefined) return G.autoAx;
     if (G.frozen || !global.Input || !global.Input.axis) return 0;
-    return global.Input.axis();
+    // Zu zweit (koop.js): die eigene Steuerung des Spielers
+    return ((G.player && G.player.eingabe) || global.Input).axis();
   }
 
   function zuFuss(G) {
@@ -376,8 +376,8 @@
 
   /** Stauchen/Strecken (spass.js form fragt hier) */
   function form(G) {
-    var p = G.player;
-    if (!st || !p || st.p !== p || p.dead || !zuFuss(G)) return { sx: 1, sy: 1 };
+    var p = G.player, st = p && p.animSt;
+    if (!st || p.dead || !zuFuss(G)) return { sx: 1, sy: 1 };
     return { sx: 1 + st.s * 0.8, sy: 1 - st.s };
   }
 
@@ -518,7 +518,11 @@
   global.Anim = {
     POSEN: POSEN, tick: tick, spieler: spieler, anwenden: anwenden, form: form, extras: extras,
     gegner: gegner, kante: kante,
-    _zustand: function () { return st; }
+    // Fuer die Tests: der Zustand von G.player (game.js stellt G als window.G bereit)
+    _zustand: function (G) {
+      G = G || global.G;
+      return (G && G.player && G.player.animSt) || null;
+    }
   };
 
 })(window);
