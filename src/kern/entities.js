@@ -451,6 +451,8 @@
   Player.prototype.honigDazu = function () {
     if (this.honigLeben === undefined) this.honigLeben = Math.floor(this.honey / 100);
     this.honey++;
+    // Zu zweit (koop.js): wer hat in diesem Level mehr Honig? (honey selbst ist gemeinsam)
+    this.honigLevel = (this.honigLevel || 0) + 1;
     var h = Math.floor(this.honey / 100);
     if (h <= this.honigLeben) return false;
     this.honigLeben = h;
@@ -2043,6 +2045,7 @@
       case 'goldhonig':
         // Drei pro Level. Zaehlt fuer die Levelkarte, nicht fuers Leben.
         p.score += 1000; p.laughTimer = 50;
+        p.goldLevel = (p.goldLevel || 0) + 1;     // zu zweit: Honig-Duell (koop.js)
         global.Sound.play('oneUp');
         g.shake(2, 6);
         var got = g.goldCount ? g.goldCount() : 0, all = (g.lvl && g.lvl.gold) || 3;

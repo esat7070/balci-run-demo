@@ -2476,6 +2476,8 @@
   P.def('audi_heck', HECK_ART, heck('#b8bcc8', '#7a7e8a'));      // Alex: silberner Audi
   P.def('cla_heck', HECK_ART, heck('#2a2a32', '#16161c'));       // Erfan: schwarzer CLA
   P.def('polizei_heck', HECK_ART, heck('#e8ecf4', '#3a5ab8'));   // Streife
+  // Zu zweit (koop.js): Yusufs roter Mustang, wie ihn Spieler 2 von hinten sieht
+  P.def('mustang_heck', HECK_ART, heck('#c8242a', '#7a1218'));
 
   /* ----- Level 6: die Kolonne, Mirkan, geparkte Autos (von hinten) ----- */
   P.def('eklasse_heck', HECK_ART, heck('#d8d2c2', '#9a9484'));   // Lennart: Opas silberne E-Klasse
@@ -2543,6 +2545,9 @@
   P.def('radler_e2', RADLER_ART2, radlerPal('#1c1418', '#eab48c', '#2b2b33', '#242630', '#4ad8c8'));
   P.def('radler_l', RADLER_ART, radlerPal('#6a4424', '#f0c09a', '#f4f4ee', '#2a2a3a', '#ff6fa8'));
   P.def('radler_l2', RADLER_ART2, radlerPal('#6a4424', '#f0c09a', '#f4f4ee', '#2a2a3a', '#ff6fa8'));
+  // Zu zweit (koop.js): Yusuf von hinten (Jeansjacke, goldenes Rad) — so sieht ihn Spieler 2
+  P.def('radler_y', RADLER_ART, radlerPal('#2a1a12', '#eab48c', '#6a8ac8', '#2a3a6a', '#ffd257'));
+  P.def('radler_y2', RADLER_ART2, radlerPal('#2a1a12', '#eab48c', '#6a8ac8', '#2a3a6a', '#ffd257'));
 
   /* Eine Kuh auf der Alm. Von vorne. Sie hat Vorfahrt. */
   P.def('kuh', `

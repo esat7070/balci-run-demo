@@ -354,6 +354,8 @@
 
     // Das Modul erst jetzt starten — es braucht den fertigen Spieler
     G.modus = G.modMod ? G.modMod.init(G, lvl, respawn) : null;
+    // Zu zweit: Rennen gegeneinander, Spieler 2 bekommt seine eigene Welt (koop.js)
+    if (global.Koop) global.Koop.vsStart(G, lvl, respawn);
     if (!respawn) {
       G.player.flipCount = 0;
       G.checkpoint = null; G.bossIntroSeen = false; G.bossHalf = false; G.bossLeben = 0;
@@ -399,6 +401,8 @@
       Durchgangs, und Level 5 zeigte den Honig aus Level 1 bis 5. Und
       Level, die mit einem Boss enden, bekamen gar keinen Eintrag. */
   function recordBest(idx) {
+    // Zu zweit: wer hat mehr Honig gesammelt? Das Ergebnis kommt in den naechsten Dialog (koop.js)
+    if (global.Koop) global.Koop.levelGeschafft(G, idx);
     var p = G.player, st = G.levelStart || { honey: 0, score: 0 };
     var rec = save.best[idx] || { honey: 0, score: 0, time: 999999 };
     rec.honey = Math.max(rec.honey, p.honey - st.honey);
@@ -492,6 +496,8 @@
   /* ================= Dialoge ================= */
 
   function startDialog(lines, after) {
+    // Zu zweit: nach einem Level kommt das Honig-Duell dazu (koop.js)
+    if (global.Koop) lines = global.Koop.dialogDazu(G, lines);
     if (!lines || !lines.length) { if (after) after(); return; }
     G.dialog = lines;
     // Andere Sprache: jetzt uebersetzen, nicht erst beim Zeichnen — die
@@ -1125,6 +1131,8 @@
       var sc = miniSzene(id);
       if (!sc) { weiter(); return; }
       startScene(sc);
+      // Zu zweit: gegeneinander (koop.js) — Shisha als Duell, sonst jeder seine eigene Runde
+      if (global.Koop) global.Koop.szeneStart(G, function () { return miniSzene(id); });
       G.miniWeiter = function () {
         var k = G.scene, zeilen = nachher ? nachher(k && k.ergebnis, k) : null;
         G.miniWeiter = null;
@@ -1683,6 +1691,8 @@
 
   /** Alles merken, was beim Tod zurueckgesetzt wird: Stand, Items, Bloecke. */
   function saveCheckpointState() {
+    // Zu zweit: auch wer wie viel Honig hat (Honig-Duell, koop.js)
+    if (global.Koop) global.Koop.merken(G);
     G.checkpointStats = snapshotStats();
     G.checkpointItems = copyMap(G.itemsTaken);
     G.checkpointBlocks = snapshotBlocks();
@@ -1719,13 +1729,20 @@
     var koop = !!(global.Koop && global.Koop.an() && global.Koop.p2());
     if (global.Fress) global.Fress.update(G);
     // Level 8 hat seine eigene Welt (Couch, Schreibtisch, Essen)
-    if (G.scene) { sceneMod().update(G, W, H); return; }
+    if (G.scene) {
+      // Zu zweit: Minispiel gegeneinander, beide Runden gleichzeitig (koop.js)
+      if (global.Koop && global.Koop.szeneAktiv(G)) global.Koop.szeneUpdate(G, W, H, sceneMod());
+      else sceneMod().update(G, W, H);
+      return;
+    }
     if (G.eat) { global.Eat.update(G, W, H); return; }
     if (G.modus && G.modMod.full) {
       // Der Levelname oben geht auch in den Modulen nach ein paar Sekunden weg
       // (vorher blieb er in Mustang, Downhill, Rennen, Doener und Pizza stehen)
       if (G.banner > 0) G.banner--;
-      G.modMod.update(G, W, H);
+      // Zu zweit: beide Welten, jede mit den Tasten ihres Spielers (koop.js)
+      if (global.Koop && global.Koop.vsAktiv(G)) global.Koop.vsUpdate(G, W, H);
+      else G.modMod.update(G, W, H);
       return;
     }
     // Während eines Dialogs steht die ganze Welt still. Vorher lief
@@ -3330,7 +3347,8 @@
 
   function drawScene() {
     if (G.scene) {
-      sceneMod().draw(ctx, G, W, H);
+      if (global.Koop && global.Koop.szeneAktiv(G)) global.Koop.szeneDraw(ctx, G, W, H, sceneMod());
+      else sceneMod().draw(ctx, G, W, H);
       return;
     }
     if (G.eat) {
@@ -3339,7 +3357,9 @@
       return;
     }
     if (G.modus && G.modMod.full) {
-      G.modMod.draw(ctx, G, W, H);
+      // Zu zweit: Splitscreen, oben Spieler 1, unten Spieler 2 (koop.js)
+      if (global.Koop && global.Koop.vsAktiv(G)) global.Koop.vsDraw(ctx, G, W, H);
+      else G.modMod.draw(ctx, G, W, H);
       if (G.banner > 0) drawBanner();
       return;
     }
@@ -3812,8 +3832,9 @@
       // Hoehen gestaffelt: der Kumpel faehrt direkt hinter Yusuf —
       // sonst ueberdecken sich die Blasen.
       if (who === 'yusuf') { x = p.cx(); y = p.y - 22; }
-      // Zu zweit spielt Spieler 2 den Kumpel: dann redet er (koop.js)
-      else if (global.Koop && global.Koop.istKumpel(G) && who === G.lvl.buddy) {
+      // Zu zweit spielt Spieler 2 den Kumpel: dann redet er (koop.js).
+      // 'koop2' = was Spieler 2 sonst so sagt (Honig-Duell)
+      else if (global.Koop && global.Koop.p2() && (who === 'koop2' || (global.Koop.istKumpel(G) && who === G.lvl.buddy))) {
         var k2 = global.Koop.p2(); x = k2.cx(); y = k2.y - 36;
       }
       else if (who === (G.lvl.buddy || 'esat') && G.rider && G.rider.pos) {
@@ -3827,7 +3848,8 @@
       ctx.globalAlpha = Math.min(1, s.t / 12);
       ctx.fillStyle = 'rgba(14,9,20,0.82)';
       ctx.fillRect(bx, sy - 4, tw + 8, 14);
-      F.draw(ctx, s.text, bx + 4, sy, { color: SPEAKER[who] ? SPEAKER[who].col : '#ffffff' });
+      var tcol = who === 'koop2' && global.Koop ? global.Koop.figur().col : (SPEAKER[who] ? SPEAKER[who].col : '#ffffff');
+      F.draw(ctx, s.text, bx + 4, sy, { color: tcol });
       ctx.globalAlpha = 1;
     }
   }
@@ -5837,6 +5859,7 @@
     });
   };
   G._levelIntro = levelIntro;
+  G._miniStarten = miniStarten;   // fuer die Tests: ein Minispiel wie in der Geschichte
   G._titleMenuTop = titleMenuTop;
   G._titleMenuStep = titleMenuStep;
   G._canvas = canvas;          // semih.js haelt das letzte Bild fest, wenn es zerspringt

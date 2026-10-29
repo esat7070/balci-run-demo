@@ -134,9 +134,11 @@
       Numpad0: ['jump', 'hopp'], NumpadDecimal: ['run', 'throw', 'nitro']
     }
   };
-  // Was in den Fahr-Leveln und Minispielen nur der Spieler steuert, der dran ist
+  // Was in den Fahr-Leveln und Minispielen nur der Spieler steuert, der dran ist.
+  // Auch BESTAETIGEN: sonst legt beim Doener gegeneinander die Leertaste von
+  // Spieler 1 auch bei Spieler 2 etwas drauf (Dialoge und Menues sind nie im Fokus).
   var FOKUS = { left: 1, right: 1, up: 1, down: 1, jump: 1, run: 1, throw: 1, puff: 1,
-                gas: 1, hopp: 1, nitro: 1, stampf: 1, laden: 1 };
+                gas: 1, hopp: 1, nitro: 1, stampf: 1, laden: 1, confirm: 1 };
   var kbP = { 1: {}, 2: {} }, padP = { 1: {}, 2: {} };
   var heldP = { 1: {}, 2: {} }, pressedP = { 1: {}, 2: {} }, releasedP = { 1: {}, 2: {} };
   var keysDownP = {};     // Taste -> [[spieler, aktionen], ...] (so wie beim Druecken verteilt)

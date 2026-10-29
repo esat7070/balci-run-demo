@@ -75,7 +75,11 @@
     fuehrer: null,
     respawn: false,     // die Blende zum Checkpoint laeuft schon
     teil: null, dran: 1, zuletzt: 2, karteT: 0,
-    menuIdx: 0
+    menuIdx: 0,
+    // Honig-Duell: gewonnene Level, Stand am Checkpoint, Ergebnis fuer den naechsten Dialog
+    siege: { 1: 0, 2: 0 }, cp: null, duellOffen: null, fuehrtHonig: 0, fuehrtT: 0,
+    // Rennen und Minispiele gegeneinander (Splitscreen): beide Welten, wer gewonnen hat
+    vs: null, vsSz: null
   };
 
   /* ---------------- Ein und aus ---------------- */
@@ -108,7 +112,7 @@
   /** Koop einschalten (Menue ZU ZWEIT oder Pause). Mitten im Level steigt
       Spieler 2 neben Yusuf ein. */
   function ein(G) {
-    if (!K.an) { K.teil = null; K.zuletzt = 2; K.karteT = 0; }
+    if (!K.an) { K.teil = null; K.zuletzt = 2; K.karteT = 0; K.siege = { 1: 0, 2: 0 }; K.duellOffen = null; K.fuehrtHonig = 0; }
     K.an = true;
     In().koop(true);
     if (G.player && G.lvl && G.state !== 'title' && G.state !== 'select' && G.state !== 'koop') {
@@ -118,6 +122,7 @@
       K.p2.maxHp = G.player.maxHp; K.p2.hp = K.p2.maxHp;
       K.p2.w = G.player.w; K.p2.h = G.player.h;
       K.p2.normalH = G.player.h; G.player.normalH = G.player.h;
+      K.p2.honigLevel = 0; K.p2.goldLevel = 0;
       neben(G, K.p2, G.player);
       platzenEffekt(G, K.p2);
     }
@@ -132,7 +137,7 @@
     }
     if (p1) { p1.blase = null; p1.eingabe = null; }
     if (G && K.p1 && G.player !== K.p1) G.player = K.p1;
-    K.an = false; K.p2 = null; K.respawn = false; K.teil = null; K.karteT = 0;
+    K.an = false; K.p2 = null; K.respawn = false; K.teil = null; K.karteT = 0; K.vs = null; K.vsSz = null;
     In().koop(false);
   }
 
@@ -184,6 +189,13 @@
     p2.invuln = p1.invuln;
     K.fuehrer = p1;
     K.respawn = false;
+    // Honig-Duell: neues Level = bei null anfangen, nach einem Tod der Stand vom Checkpoint
+    if (!respawn || !K.cp) {
+      p1.honigLevel = 0; p1.goldLevel = 0; p2.honigLevel = 0; p2.goldLevel = 0;
+      K.cp = [0, 0, 0, 0]; K.duellOffen = null; K.fuehrtHonig = 0; K.fuehrtT = 0;
+    } else {
+      p1.honigLevel = K.cp[0]; p1.goldLevel = K.cp[1]; p2.honigLevel = K.cp[2]; p2.goldLevel = K.cp[3];
+    }
   }
 
   /* ---------------- Wer ist wo ---------------- */
@@ -299,6 +311,7 @@
     if (G.frozen || G.cut || G.camFocus || (G.autoAx !== null && G.autoAx !== undefined)) { p1.wegT = 0; p2.wegT = 0; return; }
     leine(G);
     abseits(G);
+    duellTick(G);
   }
 
   /** Nicht weiter auseinander als ein Bildschirm: wer wegzieht, bleibt
@@ -532,6 +545,8 @@
   /* ---------------- Wer ist dran (Fahr-Level, Minispiele) ---------------- */
 
   function teilVon(G) {
+    // Rennen und Minispiele gegeneinander: da spielen beide gleichzeitig
+    if (vsAktiv(G) || szeneAktiv(G) || (G.scene && G.scene.vsDuell)) return null;
     if (G.scene) return SPIEL_SZENEN[G.scene.type] ? 'sz:' + G.scene.type + ':' + G.lvlIndex : null;
     if (G.eat) return 'eat:' + G.lvlIndex;
     if (G.modus && G.modMod && G.modMod.full) return 'mod:' + G.lvlIndex;
@@ -554,6 +569,487 @@
     if (!t && G.state === 'play' && !G.scene && !G.eat && !(G.modus && G.modMod && G.modMod.full)) K.teil = null;
     I.fokus(t ? K.dran : null);
     if (K.karteT > 0 && G.state === 'play' && !G.fadeDir) K.karteT--;
+  }
+
+  /* ---------------- Honig-Duell ----------------
+     Esat, 29.10.: "Wichtig ist, dass ihr untereinander konkurriert, wer mehr
+     Honig sammelt. Und dann kommen Dialoge." Honig, Punkte und Leben bleiben
+     gemeinsam (Shop, Bestenliste) — dazu zaehlt jeder Spieler, was ER in
+     diesem Level eingesammelt hat (p.honigLevel, p.goldLevel aus entities.js).
+     Goldhonig zaehlt fuenf. Wer fuehrt, steht oben in der Mitte; wechselt die
+     Fuehrung, sagt der Neue was. Nach dem Level kommt eine Karte mit dem
+     Ergebnis, und die beiden reden darueber (im naechsten Dialog). */
+  var GOLD_WERT = 5;
+  var FUEHRT = {
+    1: ['HÖ HÖ. ICH FÜHRE.', 'MEIN HONIG. ALLES MEIN HONIG.', 'FÜHRUNG. WIE IMMER.', 'ZÄHL MIT. ICH FÜHRE.'],
+    2: ['ICH FÜHRE, YUSUF!', 'WER HAT MEHR? ICH!', 'DEIN HONIG IST JETZT MEINER.', 'KLAU ICH DIR. ALLES.']
+  };
+  var DUELL = {
+    // {a} = eigene Glaeser, {b} = die des anderen, {v} = Name des anderen
+    yusufGewinnt: ['{a} ZU {b}. HÖ HÖ HÖÖÖ. HONIG FINDET MICH.', '{a} GLÄSER. {v}, DU DARFST MAL AN MEINEM GLAS RIECHEN.',
+                   'WER HAT MEHR? ICH. WIE IMMER. {a} ZU {b}.', '{a} ZU {b}. UND ICH HAB NICHT MAL RICHTIG ANGEFANGEN.'],
+    zweiterVerliert: ['{a}... DU HAST MIR DIE GLÄSER VOR DER NASE WEGGESCHNAPPT.', 'ICH HAB DIR NUR DEN VORTRITT GELASSEN. AUS RESPEKT.',
+                      'NÄCHSTES LEVEL GEHÖRT MIR. SCHWÖRE.', 'DEIN BAUCH ZIEHT DEN HONIG AN. DAS IST DOPING.'],
+    zweiterGewinnt: ['{a} ZU {b}. WER IST JETZT DER HONIG-KÖNIG, YUSUF?', 'ICH HAB DEINEN HONIG GESAMMELT. {a} GLÄSER. GERN GESCHEHEN.',
+                     '{a} ZU {b}. DAS SCHREIB ICH IN DIE GRUPPE.'],
+    yusufVerliert: ['DAS WAR MEIN HONIG. ICH HAB IHN DIR NUR GELIEHEN.', 'ICH HATTE HUNGER. HUNGER MACHT LANGSAM.',
+                    '{a}? ICH HAB ZWISCHENDURCH GESCHLAFEN. DAS ZÄHLT DOPPELT.', 'KRRRR. REVANCHE. JETZT.'],
+    gleich: ['UNENTSCHIEDEN. {a} ZU {b}.'],
+    gleichZweiter: ['DANN KRIEG ICH DIE HÄLFTE VON DEINEM.', 'EINER MUSS VERLIEREN. DU.']
+  };
+  function rnd(a) { return a[(Math.random() * a.length) | 0]; }
+
+  /** Wie viel Honig ein Spieler in diesem Level hat (Goldhonig zaehlt fuenf). */
+  function punkte(p) { return p ? (p.honigLevel || 0) + GOLD_WERT * (p.goldLevel || 0) : 0; }
+
+  /** game.js saveCheckpointState: den Stand fuer einen Tod merken. */
+  function merken(G) {
+    if (!K.an || !K.p2 || !K.p1) return;
+    K.cp = [K.p1.honigLevel || 0, K.p1.goldLevel || 0, K.p2.honigLevel || 0, K.p2.goldLevel || 0];
+  }
+
+  /** Wechselt die Fuehrung, sagt der Neue was dazu. */
+  function duellTick(G) {
+    if (K.fuehrtT > 0) K.fuehrtT--;
+    var a = punkte(K.p1), b = punkte(K.p2), f = a > b ? 1 : (b > a ? 2 : 0);
+    if (!f || f === K.fuehrtHonig || K.fuehrtT > 0) return;
+    K.fuehrtHonig = f;
+    K.fuehrtT = 240;
+    var p = f === 1 ? K.p1 : K.p2;
+    if (!p.dead && !p.blase && G.say) G.say(f === 1 ? 'yusuf' : 'koop2', rnd(FUEHRT[f]), 100);
+  }
+
+  /** game.js recordBest: das Level ist geschafft. Im Huepf-Level gewinnt, wer
+      mehr Honig hat — das Ergebnis wartet auf den naechsten Dialog. */
+  function levelGeschafft(G, idx) {
+    // Fahr-Level: dort zaehlt das Rennen (vsEnde hat das Ergebnis schon vorgemerkt)
+    if (G.eat || (G.modus && G.modMod && G.modMod.full)) return;
+    K.duellOffen = null;
+    if (!K.an || !K.p2 || !K.p1 || !G.lvl || G.lvlIndex === 'tag') return;
+    var a = punkte(K.p1), b = punkte(K.p2);
+    if (a + b === 0) return;
+    if (a > b) K.siege[1]++; else if (b > a) K.siege[2]++;
+    K.duellOffen = duellZeilen(a, b);
+  }
+
+  function fuellen(t, a, b, v) { return t.replace('{a}', a).replace('{b}', b).replace('{v}', v); }
+
+  function duellZeilen(a, b) {
+    var f = K.figur, gesamt = K.siege[1] + K.siege[2];
+    var stand = 'YUSUF ' + a + ' : ' + b + ' ' + f.name + (gesamt > 1 ? '  -  LEVEL ' + K.siege[1] + ' : ' + K.siege[2] : '');
+    var z = [['karte', 'HONIG-DUELL|' + stand + '|' + (a > b ? P1_FARBE : (b > a ? f.col : '#ffffff'))]];
+    if (a > b) {
+      z.push(['yusuf', fuellen(rnd(DUELL.yusufGewinnt), a, b, f.name)]);
+      z.push([f.id, fuellen(rnd(DUELL.zweiterVerliert), b, a, 'YUSUF')]);
+    } else if (b > a) {
+      z.push([f.id, fuellen(rnd(DUELL.zweiterGewinnt), b, a, 'YUSUF')]);
+      z.push(['yusuf', fuellen(rnd(DUELL.yusufVerliert), a, b, f.name)]);
+    } else {
+      z.push(['yusuf', fuellen(rnd(DUELL.gleich), a, b, f.name)]);
+      z.push([f.id, rnd(DUELL.gleichZweiter)]);
+    }
+    return z;
+  }
+
+  /** game.js startDialog: wartet ein Duell-Ergebnis, kommt es dazu — nach
+      dem Abschlussgespraech, in einem Minispiel davor. */
+  function dialogDazu(G, lines) {
+    if (!K.duellOffen) return lines;
+    var d = K.duellOffen;
+    K.duellOffen = null;
+    if (!K.an) return lines;
+    lines = lines || [];
+    return G.scene ? d.concat(lines) : lines.concat(d);
+  }
+
+  /** Oben in der Mitte: YUSUF 12 [Honig] 9 ESAT, der Fuehrende mit Krone. */
+  function duellHud(ctx, G, W) {
+    if (!G.lvl || G.lvl.mode === 'fussball' || G.eat) return;
+    var a = punkte(K.p1), b = punkte(K.p2), f = K.figur;
+    var sr = global.Optionen && global.Optionen.speedrun && global.Optionen.speedrun();
+    var y = sr ? 34 : 7, cx = Math.round(W / 2);
+    var na = String(a), nb = String(b);
+    var wa = F().measure(na, 1, 1), wb = F().measure(nb, 1, 1);
+    var w1 = F().measure('YUSUF', 1, 1), w2 = F().measure(f.name, 1, 1);
+    var links = cx - 10 - wa - 5 - w1, rechts = cx + 10 + wb + 5 + w2;
+    rect(ctx, links - 5, y - 2, rechts - links + 10, 13, 'rgba(8,5,12,0.72)');
+    F().draw(ctx, 'YUSUF', links, y + 1, { color: P1_FARBE, shadow: true });
+    F().draw(ctx, na, cx - 10, y + 1, { color: a > b ? '#ffffff' : '#a89cc0', align: 'right', shadow: true });
+    P().draw(ctx, 'honig', cx - 6, y - 3);
+    F().draw(ctx, nb, cx + 10, y + 1, { color: b > a ? '#ffffff' : '#a89cc0', shadow: true });
+    F().draw(ctx, f.name, cx + 10 + wb + 5, y + 1, { color: f.col, shadow: true });
+    if (a !== b) krone(ctx, a > b ? cx - 10 - wa / 2 : cx + 10 + wb / 2, y - 6);
+  }
+
+  /** Kleine Pixelkrone ueber der fuehrenden Zahl. */
+  function krone(ctx, x, y) {
+    x = Math.round(x) - 3;
+    rect(ctx, x, y + 2, 7, 2, '#ffd257');
+    rect(ctx, x, y, 1, 2, '#ffd257');
+    rect(ctx, x + 3, y - 1, 1, 3, '#ffd257');
+    rect(ctx, x + 6, y, 1, 2, '#ffd257');
+    rect(ctx, x + 3, y + 2, 1, 1, '#ff6a8a');
+  }
+
+  /* ---------------- Gegeneinander: Rennen im Splitscreen ----------------
+     Esat, 29.10.: "Das Rennen wird untereinander ... Splitscreen."
+     Jeder Spieler faehrt in seiner eigenen Welt — dieselbe Strecke, dieselben
+     Ampeln, Faesser und Zwischenfaelle (fair: was dem einen passiert, passiert
+     dem anderen an derselben Stelle auch). Das Modul baut seine Welt dafuer
+     ein zweites Mal (mod.init). Der Gegner, gegen den man sonst faehrt
+     (Alex im Audi, Esat auf dem Rad), ist jetzt der andere Spieler: das
+     Modul liest dessen Wagen aus r.vs.anderer (r.vs.nr = 1 oder 2).
+     Oben faehrt Spieler 1, unten Spieler 2; jedes Bild wird ganz normal
+     gezeichnet (unsichtbar) und halb so gross eingesetzt, links und rechts
+     daneben stehen Platz, Tempo und Nitro gross.
+     Was ein Modul dafuer braucht: vs: true, vsInfo(r) -> {kmh, nitro, anteil},
+     und im Ziel r.vsZiel = r.t (der Tick, in dem es durch war). Durch ist
+     das Rennen, wenn beide im Ziel sind (oder fuenf Sekunden nach dem
+     Ersten) — dann sagt eine Karte, wer gewonnen hat, und mod.vsFertig(G)
+     macht mit der Geschichte weiter. */
+  var vsBild = [null, null];
+  // Wer welche Tasten hat (am Start, wenn sich beide die Tastatur teilen); ein Modul kann eigene haben
+  var VS_TASTEN = { 1: ['W = GAS', 'LEERTASTE = SPRINGEN', 'SHIFT = NITRO', 'A D = LENKEN'],
+                    2: ['PFEIL HOCH = GAS', '- = SPRINGEN', '. = NITRO', 'PFEILE = LENKEN'] };
+  var VS_WARTEN = 300;      // so lange wartet das Rennen nach dem Ersten auf den Zweiten
+  var VS_KARTE = 170;       // so lange steht der Sieger im Bild
+
+  /** game.js loadLevel: nach mod.init. Zu zweit bekommt Spieler 2 seine Welt. */
+  function vsStart(G, lvl, respawn) {
+    K.vs = null;
+    var mod = G.modMod;
+    if (!K.an || !K.p2 || !K.p1 || !mod || !mod.full || !mod.vs || !G.modus) return;
+    var r1 = G.modus, r2;
+    G.player = K.p2;
+    try { r2 = mod.init(G, lvl, respawn); } finally { G.player = K.p1; }
+    if (!r2) return;
+    r1.vs = { nr: 1, anderer: r2, name: 'YUSUF', col: P1_FARBE };
+    r2.vs = { nr: 2, anderer: r1, name: K.figur.name, col: K.figur.col, wer: K.figur.id };
+    K.p1.hp = K.p1.maxHp; K.p2.hp = K.p2.maxHp;
+    // Nebeneinander starten (sonst rempeln sie sich schon im Countdown)
+    if (mod.vsAn) { mod.vsAn(G, r1); mod.vsAn(G, r2); }
+    K.vs = { mod: mod, r: [r1, r2], t: 0, ersterT: 0, ende: null,
+             teile: [G.particles, new (E().Particles)()], floats: [G.floats, new (E().Floats)()] };
+  }
+
+  function vsAktiv(G) {
+    var vs = K.vs;
+    return !!(vs && K.an && K.p2 && G.modus && (G.modus === vs.r[0] || G.modus === vs.r[1]));
+  }
+
+  /** Statt mod.update: erst die Welt von Spieler 1 (mit seinen Tasten), dann
+      die von Spieler 2. Den Motor hoert man nur von Spieler 1. */
+  function vsUpdate(G, W, H) {
+    var vs = K.vs, I = In(), snd = S(), motor = snd.motor, zeiger = I.pointer, tippen = I.tap;
+    vs.t++;
+    for (var i = 0; i < 2; i++) {
+      G.modus = vs.r[i]; G.player = i ? K.p2 : K.p1;
+      G.particles = vs.teile[i]; G.floats = vs.floats[i];
+      I.fokus(i + 1);
+      // Den Motor hoert man nur von Spieler 1, Maus und Finger gehoeren Spieler 1
+      if (i === 1) { snd.motor = null; I.pointer = function () { return KEIN_ZEIGER; }; I.tap = function () { return null; }; }
+      try { vs.mod.update(G, W, H); }
+      finally {
+        snd.motor = motor; I.pointer = zeiger; I.tap = tippen;
+        G.modus = vs.r[0]; G.player = K.p1; G.particles = vs.teile[0]; G.floats = vs.floats[0]; I.fokus(null);
+      }
+      if (!vsAktiv(G)) return;
+    }
+    vsEnde(G);
+  }
+
+  /** Wer gewinnt? Beide durch, oder fuenf Sekunden nach dem Ersten. */
+  function vsEnde(G) {
+    var vs = K.vs, a = vs.r[0], b = vs.r[1];
+    if (vs.ende) {
+      if (--vs.ende.t === 0 && vs.mod.vsFertig) vs.mod.vsFertig(G, a);
+      return;
+    }
+    if (!a.vsZiel && !b.vsZiel) return;
+    if (!vs.ersterT) vs.ersterT = vs.t;
+    if (!(a.vsZiel && b.vsZiel) && vs.t - vs.ersterT < VS_WARTEN) return;
+    var sieger = !b.vsZiel ? 1 : (!a.vsZiel ? 2 : (a.vsZiel <= b.vsZiel ? 1 : 2));
+    vs.ende = { t: VS_KARTE, sieger: sieger };
+    K.siege[sieger]++;
+    K.duellOffen = vsZeilen(sieger);
+    S().play('win');
+  }
+
+  /** Nach dem Rennen reden die beiden (kommt in den naechsten Dialog). */
+  var VS_SPRUECHE = {
+    yusufGewinnt: ['ERSTER. DER BAUCH IST AERODYNAMISCH. DAS WEISS NUR KEINER.', 'HÖ HÖ HÖÖÖ. ICH HAB DICH IM RÜCKSPIEGEL GESEHEN. KLEIN.',
+                   'GEWONNEN. UND ICH HAB NUR MIT EINER HAND GELENKT. DIE ANDERE HATTE HONIG.'],
+    zweiterVerliert: ['DEIN AUSPUFF RIECHT NACH HONIG. ICH KONNTE NICHTS SEHEN.', 'ICH HAB DICH GEWINNEN LASSEN. DU WARST TRAURIG.',
+                      'REVANCHE. GLEICH. OHNE DEINE ABKÜRZUNGEN.'],
+    zweiterGewinnt: ['ERSTER, YUSUF. ICH HAB DIR SOGAR GEWUNKEN.', 'WAS WAR DAS? BIST DU UNTERWEGS EINGESCHLAFEN?',
+                     'ICH WAR SO SCHNELL, ICH HAB MICH SELBST ÜBERHOLT.'],
+    yusufVerliert: ['DIE STRASSE WAR SCHIEF. NUR AUF MEINER SEITE.', 'ICH HAB GEBREMST. FÜR EINE BIENE. DAS IST CHARAKTER.',
+                    'KRRRR. MEIN TANK WAR VOLLER HONIG ALS DEINER. ZU SCHWER.']
+  };
+  var VS_ESSEN = {
+    yusufGewinnt: ['ZEHNTAUSEND KALORIEN. ICH BIN EIN KÜNSTLER.', 'SCHNELLER GEGESSEN, ALS DU GEKAUT HAST.'],
+    zweiterVerliert: ['DU HAST NICHT GEKAUT. DAS ZÄHLT NICHT.', 'ICH HAB AUF QUALITÄT GEACHTET. DU NICHT.'],
+    zweiterGewinnt: ['ERSTER SATT. WER HÄTTE DAS GEDACHT? ICH.', 'YUSUF, DU WARST ZU LANGSAM. BEIM ESSEN. DU.'],
+    yusufVerliert: ['DAS WAR NUR AUFWÄRMEN. MEIN MAGEN WAR NOCH NICHT WACH.', 'ICH HAB GENOSSEN. DU HAST GESCHLUNGEN.']
+  };
+  function vsZeilen(sieger) {
+    var f = K.figur, name = sieger === 1 ? 'YUSUF' : f.name, mod = K.vs && K.vs.mod;
+    var sp = mod && mod.vsArt === 'essen' ? VS_ESSEN : VS_SPRUECHE;
+    var z = [['karte', ((mod && mod.vsTitel) || 'RENNEN') + '|' + name + ' GEWINNT|' + (sieger === 1 ? P1_FARBE : f.col)]];
+    if (sieger === 1) {
+      z.push(['yusuf', rnd(sp.yusufGewinnt)]);
+      z.push([f.id, rnd(sp.zweiterVerliert)]);
+    } else {
+      z.push([f.id, rnd(sp.zweiterGewinnt)]);
+      z.push(['yusuf', rnd(sp.yusufVerliert)]);
+    }
+    return z;
+  }
+
+  /** Wer liegt gerade vorne (Ziel zaehlt vor Strecke)? 1 oder 2. */
+  function vsPlatz(vs, i) {
+    var a = vs.r[i], b = vs.r[1 - i];
+    if (a.vsZiel && b.vsZiel) return a.vsZiel <= b.vsZiel ? 1 : 2;
+    if (a.vsZiel || b.vsZiel) return a.vsZiel ? 1 : 2;
+    var ia = vs.mod.vsInfo(a), ib = vs.mod.vsInfo(b);
+    if (Math.abs(ia.anteil - ib.anteil) < 0.0005) return 0;      // gleichauf (z.B. am Start)
+    return ia.anteil > ib.anteil ? 1 : 2;
+  }
+
+  /** Statt mod.draw: beide Bilder halb so gross uebereinander, Anzeigen daneben. */
+  function vsDraw(ctx, G, W, H) {
+    var vs = K.vs;
+    var Px = P(), echtChar = Px.drawChar;
+    halbeBilder(ctx, G, W, H, function (i, o) {
+      G.modus = vs.r[i]; G.player = i ? K.p2 : K.p1;
+      G.particles = vs.teile[i]; G.floats = vs.floats[i];
+      if (i === 1) tauscheFiguren(Px, echtChar);
+      try { vs.mod.draw(o, G, W, H); }
+      finally {
+        Px.drawChar = echtChar;
+        G.modus = vs.r[0]; G.player = K.p1; G.particles = vs.teile[0]; G.floats = vs.floats[0];
+      }
+    });
+    var bw = W / 2, bh = H / 2, bx = (W - bw) / 2;
+    for (var i = 0; i < 2; i++) vsTafel(ctx, G, W, i * bh, bh, bx, i);
+    if (vs.ende) vsSieger(ctx, G, W, H, vs.ende, (vs.mod.vsZielText || 'SPIELER {n} WAR ZUERST IM ZIEL.').replace('{n}', vs.ende.sieger));
+  }
+
+  /** Die Anzeigen neben einem Bild: links wer, Platz; rechts Tempo, Nitro, Strecke. */
+  function vsTafel(ctx, G, W, y0, bh, bx, i) {
+    var vs = K.vs, r = vs.r[i], info = vs.mod.vsInfo(r), anders = vs.mod.vsInfo(vs.r[1 - i]);
+    var col = i ? K.figur.col : P1_FARBE, name = i ? K.figur.name : 'YUSUF', wer = i ? K.figur.id : 'yusuf';
+    var platz = vsPlatz(vs, i), lx = bx / 2, rx = W - bx / 2, p = i ? K.p2 : K.p1;
+    // Hintergrund der Tafeln: dunkel, ein Streifen in der Spielerfarbe
+    tafelGrund(ctx, W, y0, bh, bx, col, i);
+    // Links: Spieler, Figur, Platz
+    F().draw(ctx, 'SPIELER ' + (i + 1), lx, y0 + 8, { color: col, align: 'center', shadow: true });
+    F().draw(ctx, name, lx, y0 + 19, { color: '#ffffff', align: 'center', shadow: true });
+    P().drawChar(ctx, wer, lx, y0 + 82, { pose: platz === 1 ? 'cheer' : 'idle', frame: (G.tick >> 4) & 1,
+                                          face: platz === 1 ? 'laugh' : 'normal', scale: 1.5 });
+    if (platz) {
+      F().draw(ctx, platz + '.', lx, y0 + 96, { color: platz === 1 ? '#ffd257' : '#c8c0d8', align: 'center', scale: 3, shadow: true });
+      if (platz === 1) krone(ctx, lx, y0 + 90);
+    }
+    // Herzen
+    for (var h = 0; h < p.maxHp; h++) {
+      ctx.globalAlpha = h < p.hp ? 1 : 0.28;
+      P().draw(ctx, 'herz', lx - (p.maxHp * 13) / 2 + h * 13 + 1, y0 + bh - 18);
+    }
+    ctx.globalAlpha = 1;
+    // Rechts: Tempo, Nitro, Strecke (beide Markierungen)
+    var wert = info.wert !== undefined ? info.wert : info.kmh;
+    F().draw(ctx, Gfmt(Math.max(0, Math.round(wert))), rx, y0 + 12, { color: '#ffe9a8', align: 'center', scale: 3, shadow: true });
+    F().draw(ctx, info.einheit || 'KM/H', rx, y0 + 36, { color: '#a89cc0', align: 'center' });
+    if (info.nitro !== null && info.nitro !== undefined) {
+      F().draw(ctx, 'NITRO', rx, y0 + 52, { color: '#8ab8ff', align: 'center' });
+      rect(ctx, rx - 40, y0 + 62, 80, 6, '#241830');
+      rect(ctx, rx - 40, y0 + 62, Math.round(80 * Math.max(0, Math.min(1, info.nitro))), 6, '#6ab0ff');
+    }
+    var sy = y0 + 84, sx = rx - 44, sw = 88;
+    F().draw(ctx, info.balken || 'STRECKE', rx, sy - 10, { color: '#a89cc0', align: 'center' });
+    rect(ctx, sx, sy, sw, 4, '#241830');
+    var andersCol = i ? P1_FARBE : K.figur.col;
+    rect(ctx, sx + sw * Math.min(1, anders.anteil) - 2, sy - 2, 4, 8, andersCol);
+    rect(ctx, sx + sw * Math.min(1, info.anteil) - 2, sy - 3, 4, 10, '#ffffff');
+    rect(ctx, sx + sw - 1, sy - 4, 2, 12, '#ffd257');
+    // Am Start: wer welche Tasten hat (wenn sich beide die Tastatur teilen)
+    if (r.phase === 'start' && In().geteilt && In().geteilt()) {
+      var tasten = vs.mod.vsTasten || VS_TASTEN, z = tasten[i + 1];
+      for (var k = 0; k < z.length; k++) F().draw(ctx, z[k], rx, y0 + 100 + k * 10, { color: col, align: 'center' });
+    }
+  }
+
+  /** Das Rennen ist entschieden: der Name des Siegers quer uebers Bild. */
+  function vsSieger(ctx, G, W, H, e, unter) {
+    var k = Math.min(1, (VS_KARTE - e.t) / 12), col = e.sieger === 1 ? P1_FARBE : K.figur.col;
+    var name = e.sieger === 1 ? 'YUSUF' : K.figur.name;
+    ctx.globalAlpha = 0.86 * k;
+    rect(ctx, 0, H / 2 - 30, W, 60, '#08050c');
+    ctx.globalAlpha = k;
+    rect(ctx, 0, H / 2 - 30, W, 2, col);
+    rect(ctx, 0, H / 2 + 28, W, 2, col);
+    F().draw(ctx, name + ' GEWINNT!', W / 2, H / 2 - 20, { color: col, align: 'center', scale: 3, shadow: true });
+    F().draw(ctx, unter || '', W / 2, H / 2 + 12, { color: '#d8cfe8', align: 'center', shadow: true });
+    ctx.globalAlpha = 1;
+  }
+
+  /* ---------------- Minispiele gegeneinander ----------------
+     Esat, 29.10.: "Die Minispiele sind dann auch immer gegeneinander."
+     Das Shisha-Duell ist schon ein Duell: dort uebernimmt Spieler 2 Esat
+     (shisha.js, k.vsDuell). Alle anderen Minispiele (Einpacken, Shawarma,
+     Omas Teller, Angeln) spielen beide gleichzeitig — jeder seine eigene
+     Runde, oben Spieler 1, unten Spieler 2, wie bei den Rennen. Jede Welt
+     hat eigene Teilchen und Texte, die Maus zaehlt nur fuer Spieler 1. Wenn
+     beide ihre Ergebnis-Karte weggedrueckt haben, gewinnt, wer mehr Punkte
+     hat — dann geht die Geschichte weiter (mit der Szene von Spieler 1). */
+  var KEIN_ZEIGER = { x: 0, y: 0, down: false, justDown: false, justUp: false, on: false };
+
+  /** game.js miniStarten: die Szene laeuft. neu() baut eine zweite. */
+  function szeneStart(G, neu) {
+    K.vsSz = null;
+    var k1 = G.scene;
+    if (!K.an || !K.p2 || !k1 || G.mini) return;
+    if (k1.type === 'shisha') { k1.vsDuell = { name: K.figur.name, col: K.figur.col }; return; }
+    var k2 = neu();
+    if (!k2) return;
+    k1.vs = { nr: 1 }; k2.vs = { nr: 2 };
+    K.vsSz = { k: [k1, k2], teile: [G.particles, new (E().Particles)()], floats: [G.floats, new (E().Floats)()],
+               ende: null, t: 0 };
+  }
+
+  function szeneAktiv(G) {
+    var v = K.vsSz;
+    return !!(v && K.an && K.p2 && G.scene && (G.scene === v.k[0] || G.scene === v.k[1]));
+  }
+
+  /** Statt Szene.update: beide Runden, jede mit den Tasten ihres Spielers. */
+  function szeneUpdate(G, W, H, mod) {
+    var v = K.vsSz, I = In(), k1 = v.k[0], k2 = v.k[1], i;
+    v.t++;
+    // Beide fangen gleichzeitig an (Dialog vorher, dann der Countdown)
+    if (k1.los) k2.los = true;
+    if (k1.losT && !k2.losT) k2.losT = k1.losT;
+    if (k2.losT && !k1.losT) k1.losT = k2.losT;
+    var echt = { pointer: I.pointer, tap: I.tap, ende: G.miniEnde };
+    for (i = 0; i < 2; i++) {
+      var k = v.k[i];
+      if (k.vsFertig) continue;
+      G.scene = k; G.player = i ? K.p2 : K.p1;
+      G.particles = v.teile[i]; G.floats = v.floats[i];
+      I.fokus(i + 1);
+      if (i === 1) { I.pointer = function () { return KEIN_ZEIGER; }; I.tap = function () { return null; }; }
+      G.miniEnde = (function (kk) { return function () { kk.vsFertig = true; }; })(k);
+      try { mod.update(G, W, H); }
+      finally {
+        I.pointer = echt.pointer; I.tap = echt.tap; G.miniEnde = echt.ende; I.fokus(null);
+        G.scene = k1; G.player = K.p1; G.particles = v.teile[0]; G.floats = v.floats[0];
+      }
+      if (!szeneAktiv(G)) return;
+    }
+    // Beide haben ihre Karte gesehen: wer hat mehr Punkte?
+    if (!v.ende && k1.vsFertig && k2.vsFertig) {
+      var a = szPunkte(k1), b = szPunkte(k2), sieger = a >= b ? 1 : 2;
+      v.ende = { t: VS_KARTE, sieger: sieger, a: a, b: b };
+      K.siege[sieger]++;
+      S().play('win');
+    }
+    if (v.ende && --v.ende.t === 0) {
+      K.vsSz = null;
+      if (G.miniEnde) G.miniEnde();
+    }
+  }
+
+  /** In der Welt von Spieler 2 spielt seine Figur — und Yusuf steht dort,
+      wo sie sonst stuende (Pixel.drawChar wird dafuer kurz ersetzt). */
+  function tauscheFiguren(Px, echtChar) {
+    var f2 = K.figur.id;
+    if (f2 === 'yusuf') return;
+    Px.drawChar = function (c, wer, x, y, opts) {
+      return echtChar.call(this, c, wer === 'yusuf' ? f2 : (wer === f2 ? 'yusuf' : wer), x, y, opts);
+    };
+  }
+
+  function szPunkte(k) { return k.karte ? k.karte.punkte : (k.punkte || 0); }
+
+  /** Statt Szene.draw: beide Runden halb so gross uebereinander. */
+  function szeneDraw(ctx, G, W, H, mod) {
+    var v = K.vsSz;
+    var Px = P(), echtChar = Px.drawChar;
+    halbeBilder(ctx, G, W, H, function (i, o) {
+      G.scene = v.k[i]; G.player = i ? K.p2 : K.p1;
+      G.particles = v.teile[i]; G.floats = v.floats[i];
+      if (i === 1) tauscheFiguren(Px, echtChar);
+      try { mod.draw(o, G, W, H); }
+      finally {
+        Px.drawChar = echtChar;
+        G.scene = v.k[0]; G.player = K.p1; G.particles = v.teile[0]; G.floats = v.floats[0];
+      }
+    });
+    var bw = W / 2, bh = H / 2, bx = (W - bw) / 2;
+    for (var i = 0; i < 2; i++) szTafel(ctx, G, W, i * bh, bh, bx, i);
+    if (v.ende) {
+      vsSieger(ctx, G, W, H, v.ende, 'MEHR PUNKTE: ' + Math.max(v.ende.a, v.ende.b) + ' ZU ' + Math.min(v.ende.a, v.ende.b));
+    }
+  }
+
+  function szTafel(ctx, G, W, y0, bh, bx, i) {
+    var v = K.vsSz, k = v.k[i], a = szPunkte(k), b = szPunkte(v.k[1 - i]);
+    var col = i ? K.figur.col : P1_FARBE, name = i ? K.figur.name : 'YUSUF', wer = i ? K.figur.id : 'yusuf';
+    var vorne = a > b || (a === b && i === 0), lx = bx / 2, rx = W - bx / 2;
+    tafelGrund(ctx, W, y0, bh, bx, col, i);
+    F().draw(ctx, 'SPIELER ' + (i + 1), lx, y0 + 8, { color: col, align: 'center', shadow: true });
+    F().draw(ctx, name, lx, y0 + 19, { color: '#ffffff', align: 'center', shadow: true });
+    P().drawChar(ctx, wer, lx, y0 + 82, { pose: vorne && a > 0 ? 'cheer' : 'idle', frame: (G.tick >> 4) & 1,
+                                          face: vorne && a > 0 ? 'laugh' : 'normal', scale: 1.5 });
+    if (a !== b) {
+      F().draw(ctx, (vorne ? 1 : 2) + '.', lx, y0 + 96, { color: vorne ? '#ffd257' : '#c8c0d8', align: 'center', scale: 3, shadow: true });
+      if (vorne) krone(ctx, lx, y0 + 90);
+    }
+    F().draw(ctx, 'PUNKTE', rx, y0 + 22, { color: '#a89cc0', align: 'center' });
+    F().draw(ctx, Gfmt(a), rx, y0 + 34, { color: '#ffe9a8', align: 'center', scale: 3, shadow: true });
+    if (k.vsFertig && !v.ende) F().draw(ctx, 'FERTIG', rx, y0 + 70, { color: '#8cd85a', align: 'center', shadow: true });
+  }
+  function Gfmt(n) { return global.Minis && global.Minis.fmt ? global.Minis.fmt(n) : String(n); }
+
+  function tafelGrund(ctx, W, y0, bh, bx, col, i) {
+    rect(ctx, 0, y0, bx, bh, i ? '#0c0814' : '#0e0a12');
+    rect(ctx, W - bx, y0, bx, bh, i ? '#0c0814' : '#0e0a12');
+    rect(ctx, bx - 2, y0, 2, bh, col);
+    rect(ctx, W - bx, y0, 2, bh, col);
+  }
+
+  /** Zwei Bilder (je ganz normal gezeichnet) halb so gross uebereinander.
+      malen(i, ctx) zeichnet das Bild von Spieler i+1 in eine eigene Leinwand. */
+  function halbeBilder(ctx, G, W, H, malen) {
+    var haupt = G._canvas, rs = haupt.width / W, i;
+    for (i = 0; i < 2; i++) {
+      var c = vsBild[i] || (vsBild[i] = document.createElement('canvas'));
+      if (c.width !== haupt.width || c.height !== haupt.height) { c.width = haupt.width; c.height = haupt.height; }
+      var o = c.getContext('2d');
+      o.setTransform(1, 0, 0, 1, 0, 0);
+      o.globalAlpha = 1; o.globalCompositeOperation = 'source-over';
+      o.clearRect(0, 0, c.width, c.height);
+      o.setTransform(rs, 0, 0, rs, 0, 0);
+      o.imageSmoothingEnabled = false;
+      G._canvas = c;
+      try { malen(i, o); } finally { G._canvas = haupt; }
+    }
+    var bw = W / 2, bh = H / 2, bx = (W - bw) / 2;
+    rect(ctx, 0, 0, W, H, '#07050b');
+    ctx.save();
+    ctx.imageSmoothingEnabled = true;
+    try { ctx.imageSmoothingQuality = 'high'; } catch (e) {}
+    for (i = 0; i < 2; i++) ctx.drawImage(vsBild[i], 0, 0, vsBild[i].width, vsBild[i].height, bx, i * bh, bw, bh);
+    ctx.restore();
+    rect(ctx, 0, bh - 1, W, 2, '#08050c');
+    rect(ctx, bx, bh - 1, bw, 1, 'rgba(255,255,255,0.18)');
+  }
+
+  /** Das Shisha-Duell (shisha.js): Spieler 2 hat gewonnen bzw. verloren. */
+  function duellSieg(G, sieger) {
+    if (!K.an) return;
+    K.siege[sieger]++;
   }
 
   /* ---------------- Zeichnen ---------------- */
@@ -628,6 +1124,7 @@
       Speedrun-Uhr und Trophaeen). rx = rechter Rand wie in game.js. */
   function hud(ctx, G, rx) {
     if (!K.an || !K.p2) return;
+    duellHud(ctx, G, G.viewW ? G.viewW() : 512);
     var p = K.p2, y = 58, i;
     rx = rx || 504;
     var name = K.figur.name, col = K.figur.col;
@@ -773,7 +1270,8 @@
       LI().glow(ctx, W / 2 + 90, 100, 70, f.col, 0.16);
     }
     F().draw(ctx, 'ZU ZWEIT', W / 2, 12, { color: '#ffd257', align: 'center', scale: 2, shadow: true });
-    F().draw(ctx, 'DIE GANZE GESCHICHTE. ZWEI SPIELER. EIN HONIGKONTO.', W / 2, 34, { color: '#c8b8e0', align: 'center' });
+    F().draw(ctx, 'DIE GANZE GESCHICHTE. ZWEI SPIELER. EIN HONIGKONTO.', W / 2, 32, { color: '#c8b8e0', align: 'center' });
+    F().draw(ctx, 'WER MEHR HONIG SAMMELT, GEWINNT DAS LEVEL. GOLDHONIG ZÄHLT FÜNF.', W / 2, 43, { color: '#ffd257', align: 'center' });
 
     // Die beiden Figuren
     var hop = Math.abs(Math.sin(G.tick * 0.08)) * 3;
@@ -831,10 +1329,20 @@
     gegnerKontakt: gegnerKontakt, bossUpdate: bossUpdate, bossStart: bossStart,
     kamera: kamera, heilen: heilen, jubeln: jubeln, istKumpel: istKumpel,
     fokusTick: fokusTick,
+    // Rennen gegeneinander im Splitscreen
+    vsStart: vsStart, vsAktiv: vsAktiv, vsUpdate: vsUpdate, vsDraw: vsDraw,
+    vs: function () { return K.vs; },
+    /** Die Uhr des Duells (Ticks seit Beginn) — fuer r.vsZiel, wenn das Modul keine eigene hat. */
+    vsUhr: function () { return K.vs ? K.vs.t : 0; },
+    szeneStart: szeneStart, szeneAktiv: szeneAktiv, szeneUpdate: szeneUpdate, szeneDraw: szeneDraw,
+    vsSz: function () { return K.vsSz; }, duellSieg: duellSieg,
+    // Honig-Duell
+    punkte: punkte, merken: merken, levelGeschafft: levelGeschafft, dialogDazu: dialogDazu,
+    siege: function () { return { 1: K.siege[1], 2: K.siege[2] }; },
     // Zeichnen
     zeichnen: zeichnen, blaseMalen: blaseMalen, zeichen: zeichen, hud: hud, oben: oben, wer: wer,
     // fuer Tests
-    _K: K, _frei: frei, _blaseStart: blaseStart, _platzen: platzen, _leine: leine, LEINE: LEINE
+    _K: K, _frei: frei, _duellZeilen: duellZeilen, _texte: { DUELL: DUELL, FUEHRT: FUEHRT, VS: VS_SPRUECHE, ESSEN: VS_ESSEN }, _blaseStart: blaseStart, _platzen: platzen, _leine: leine, LEINE: LEINE
   };
 
 })(window);
