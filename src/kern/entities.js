@@ -38,10 +38,11 @@
   var BB_TAKT = AS.BB_TAKT;       // Ticks zwischen zwei Schuessen (antippen)
   var BB_DAUER = AS.BB_DAUER;     // ... und bei gehaltener Taste (Dauerfeuer)
   var BB_TEMPO = AS.BB_TEMPO;
+  var VORRAT = AS.VORRAT;
 
   /** Zielhilfe: Der BB fliegt leicht schraeg auf den naechsten Gegner vor
       Yusuf, wenn der nicht zu steil ueber oder unter ihm steht (etwa 30
-      Grad). So trifft man auch den Sniper auf dem Hochsitz und Sonnet auf
+      Grad). So trifft man auch den Sniper auf dem Hochsitz und Samet auf
       dem Dach — und am Handy, wo man nicht zielen kann. */
   function zielhilfe(g, p, mx, my) {
     var best = null, bd = 1e9;
@@ -501,6 +502,8 @@
     this.schubT = 0; this.schubV = 0;
     this.bombeWunsch = 0; this.keineBombeT = 0; this.waffeTextT = 0; this.pogoT = 0;
     this.mag = MAGAZIN;      // Level 21: BBs im Magazin
+    this.vorrat = VORRAT;    // ... und in der Tasche
+    this.leerT = 0;          // KLICK: das Magazin ist leer
     this.reload = 0;         // > 0: es wird nachgeladen
     this.bbCool = 0;
     this.muzzle = 0;         // Muendungsblitz
@@ -591,16 +594,35 @@
 
     /* --- Airsoft (Level 21): die Leihwaffe schiesst BBs ---
        Antippen = ein Schuss, Taste halten = Dauerfeuer (etwas langsamer).
-       Ist das Magazin leer, wird von allein nachgeladen. */
+       Nachladen muss man selbst: R (Controller: Y). Am Handy und fuer die
+       Test-Bots (g.autoNachladen) geht es weiter von allein, wenn es leer ist.
+       Der Vorrat ist begrenzt; besiegte Gegner lassen BBs fallen (airsoft.js). */
     if (this.bbCool > 0) this.bbCool--;
     if (this.muzzle > 0) this.muzzle--;
+    if (this.leerT > 0) this.leerT--;
     if (g.lvl && g.lvl.airsoft && !bike) {
       if (this.reload > 0 && --this.reload === 0) {
-        this.mag = MAGAZIN;
+        var fehlt = MAGAZIN - this.mag, nimm = Math.min(fehlt, this.vorrat);
+        this.mag += nimm; this.vorrat -= nimm;
         global.Sound.play('reload');
       }
       var tipp = In.hit('throw'), halten = In.down('throw');
-      if (!frozen && !auto && this.reload === 0 && this.bbCool === 0 && (tipp || halten)) {
+      var laden = In.hit('laden') || ((g.touch || g.autoNachladen) && this.mag <= 0);
+      if (!frozen && !auto && this.reload === 0 && laden && this.mag < MAGAZIN && this.vorrat > 0) {
+        this.reload = NACHLADEN;
+        this.leerT = 0;
+        global.Sound.play('klick');
+      }
+      if (!frozen && !auto && this.reload === 0 && this.bbCool === 0 && (tipp || halten) && this.mag <= 0) {
+        // Leer: KLICK. Wer nicht nachlaedt, schiesst nicht.
+        this.bbCool = 14;
+        global.Sound.play('klick');
+        if (this.leerT <= 0) {
+          this.leerT = 100;
+          g.floats.add(this.cx(), this.y - 10, this.vorrat > 0 ? 'KLICK.' : 'KLICK. LEER.', '#c8c0d8', 50);
+        }
+      }
+      if (!frozen && !auto && this.reload === 0 && this.bbCool === 0 && (tipp || halten) && this.mag > 0) {
         this.bbCool = tipp ? BB_TAKT : BB_DAUER;
         this.mag--;
         this.muzzle = 4;
@@ -612,10 +634,7 @@
         if (bb && zh) bb.grav = 0;
         if (bb) bb.von = this;
         global.Sound.play('bb');
-        if (this.mag <= 0) {
-          this.reload = NACHLADEN;
-          g.floats.add(this.cx(), this.y - 10, (global.Levels.airsoft || {}).nachladen || 'NACHLADEN!', '#c8c0d8', 50);
-        }
+        if (this.mag <= 0) this.leerT = 0;
       }
     }
 
@@ -1391,7 +1410,7 @@
     soldat:     { w: 12, h: 18, spr: ['soldat', 'soldat2'], score: 200, hp: 1, airsoft: true, hitSpr: 'soldat_hit' },
     grena:      { w: 12, h: 18, spr: ['grena', 'grena2'], score: 220, hp: 1, airsoft: true, hitSpr: 'grena_hit' },
     sniper:     { w: 16, h: 16, spr: ['sniper', 'sniper2'], score: 300, hp: 1, airsoft: true, hitSpr: 'sniper_hit' },
-    highlander: { w: 12, h: 19, spr: ['highlander', 'highlander2'], score: 450, hp: 3, airsoft: true, hitSpr: 'highlander_hit' },
+    highlander: { w: 12, h: 19, spr: ['highlander', 'highlander2'], score: 450, hp: AS.HIGHLANDER, airsoft: true, hitSpr: 'highlander_hit' },
     // Level 22, Waldweg
     schwein:    { w: 20, h: 13, spr: ['schwein', 'schwein2'], score: 180, hp: 1 },
     // Level 24/25, Flughafen
@@ -1800,8 +1819,12 @@
     g.shake(3, 6);
     g.particles.burst(this.cx(), this.y + 4, 8,
       { col: '#fff0c0', spread: 2.2, up: 0.8, life: 20 });
-    if (this.hp <= 0) this.die(g, p);
-    else {
+    if (this.hp <= 0) {
+      // Plattgestampft: animation.js zeichnet einen Pfannkuchen an dieser Stelle
+      // (der Polizist hechtet weiterhin zur Seite, Airsoft-Spieler gehen vom Feld)
+      if (this.t !== 'polizei' && !this.def.airsoft) this.platt = { x: this.cx(), y: this.y + this.h };
+      this.die(g, p);
+    } else {
       this.stun = 70;
       g.floats.add(this.cx(), this.y - 8, 'AUTSCH, BRO!', '#ffd257', 45);
     }
@@ -1829,6 +1852,9 @@
       var hl = (global.Levels.airsoft || {}).hit || ['HIT!'];
       g.floats.add(this.cx(), this.y - 18, this.t === 'highlander' ? global.Levels.airsoft.highlanderEnde
                    : hl[(Math.random() * hl.length) | 0], '#ff8a2a', 70);
+      // Manchmal faellt ein BB-Paeckchen aus der Weste (der Highlander hat immer eins)
+      if (g.addItem && (this.t === 'highlander' || Math.random() < AS.FALLEN_LASSEN)) g.addItem('bbs', this.cx(), this.y + 4, true);
+      if (global.Airsoft && global.Airsoft.serie) global.Airsoft.serie(g, this);
     }
     if (this.t === 'polizei') {
       // Niemand wird ueberfahren: er hechtet in hohem Bogen zur Seite.
@@ -1888,7 +1914,9 @@
     waffe_shawarma: { w: 16, h: 16, spr: 'waffe_shawarma', waffe: 'shawarma' },
     waffe_messer: { w: 16, h: 16, spr: 'waffe_messer', waffe: 'messer' },
     waffe_schwert: { w: 16, h: 16, spr: 'waffe_schwert', waffe: 'schwert' },
-    waffe_saebel: { w: 16, h: 16, spr: 'waffe_saebel', waffe: 'saebel' }
+    waffe_saebel: { w: 16, h: 16, spr: 'waffe_saebel', waffe: 'saebel' },
+    // Airsoft: ein Paeckchen BBs (Level 21, airsoft.js laesst es fallen)
+    bbs: { w: 12, h: 12, spr: 'bbpack' }
   };
 
   var FRESSBAR = { shawarma: 1, souvlaki: 1, doener: 1, kubide: 1, baklava: 1, gold: 1, boerek: 1,
@@ -2032,6 +2060,11 @@
         global.Sound.play('heal');
         g.floats.add(p.cx(), p.y - 8, global.Levels.kubideLine(p.eatCount), '#ffd257', 80);
         if (Math.random() < 0.6) p.doGrowl(g);
+        break;
+      case 'bbs':
+        p.vorrat = Math.min(AS.VORRAT_MAX, (p.vorrat || 0) + AS.PAECKCHEN);
+        global.Sound.play('reload');
+        g.floats.add(p.cx(), p.y - 10, '+' + AS.PAECKCHEN + ' BBS', '#c8ff6a', 45);
         break;
       case 'kippen':
         p.smoke = true; p.score += 250; p.laughTimer = 30;
@@ -2921,6 +2954,8 @@
     clearShots(g);
     g.shake(4, 20);
     global.Sound.play('bossRoar');
+    // Wie in einem Soulslike: Stille, Kamera ran, Ausbruch, neuer Name (bosskino.js)
+    if (global.BossKino) global.BossKino.verwandlung(g, b);
   }
 
   /** Laeuft jeden Frame waehrend der Verwandlung. Gibt true zurueck, wenn fertig. */
@@ -2943,8 +2978,10 @@
       g.shake(10, 34);
       global.Sound.play('power');
       if (g.flashScreen) g.flashScreen(col, 26);
-      g.floats.add(b.cx(), b.y - 20, label, col, 130);
+      // Im Boss-Film kurz: gleich danach erscheint der neue Name gross
+      g.floats.add(b.cx(), b.y - 20, label, col, g.verwandlung ? 40 : 130);
       g.particles.burst(b.cx(), b.y + b.h / 2, 48, { col: col, spread: 4.6, up: 1.4, life: 54 });
+      if (global.BossKino) global.BossKino.ausbruch(g, b);
     }
     return b.timer <= 0;
   }

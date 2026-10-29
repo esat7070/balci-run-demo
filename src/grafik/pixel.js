@@ -1347,7 +1347,7 @@
   `;
 
   /* ---------------------------------------------------------------
-     SONNET — Boss in Level 21. Airsoft seit acht Jahren. Dunkle Locken,
+     SAMET — Boss in Level 21. Airsoft seit acht Jahren. Dunkle Locken,
      oben viel, an den Seiten kurz, duenner Schnurrbart. Tarnhemd,
      sandfarbener Plattentraeger mit Magazintaschen (und einem orangen
      Funkgeraet), Tuerkei-Patch am Arm. Die M4 zeichnet bosse-Code dazu.
@@ -1479,7 +1479,7 @@
   `;
 
   /* ---------------------------------------------------------------
-     EMRE — Sonnets Cousin, Pizzeria Vesuvio. Kochmuetze, grosser
+     EMRE — Samets Cousin, Pizzeria Vesuvio. Kochmuetze, grosser
      Schnurrbart, rotes Halstuch, Schuerze.
      --------------------------------------------------------------- */
 
@@ -2771,7 +2771,7 @@
       footY: 18,
       height: 29, width: 20
     },
-    // Sonnet: Locken, Tarnmuster, Plattentraeger. Vorne der Tuerkei-Patch.
+    // Samet: Locken, Tarnmuster, Plattentraeger. Vorne der Tuerkei-Patch.
     sonnet: {
       heads: { normal: 'so_head', laugh: 'so_head_grin', hurt: 'so_head_hurt',
                sleep: 'so_head', eat: 'so_head_grin', growl: 'so_head_rage',
@@ -3099,20 +3099,23 @@
     // opts.teil: 'kopf' = nur Kopf und Hut, 'koerper' = alles ausser Kopf und Hut
     // (Bauchrutscher: der Koerper liegt, der Kopf bleibt aufrecht, game.js)
     var mitKoerper = opts.teil !== 'kopf', mitKopf = opts.teil !== 'koerper';
+    // p.x: Oberkoerper (Rumpf, Kopf, Arme) seitlich — vorgelehnt, zurueckgelehnt
+    // (animation.js); die Beine bleiben stehen. p.hx: Kopf zusaetzlich.
+    var ux = p.x || 0;
 
     if (mitKoerper) {
-      draw(sctx, arm, tx + cfg.armBackOX + p.aB[0], ty + cfg.armOY + p.aB[1], false, true);
+      draw(sctx, arm, tx + ux + cfg.armBackOX + p.aB[0], ty + cfg.armOY + p.aB[1], false, true);
       draw(sctx, leg, tx + cfg.legLOX + p.lL[0], ty + cfg.legOY + p.lL[1], false, true);
       draw(sctx, leg, tx + cfg.legROX + p.lR[0], ty + cfg.legOY + p.lR[1], false, false);
-      draw(sctx, torso, tx, ty, false, false);
+      draw(sctx, torso, tx + ux, ty, false, false);
     }
     var headName = cfg.heads[opts.face || 'normal'] || cfg.heads.normal;
-    var hx = tx + cfg.headOX, hy = ty + cfg.headOY + (p.h || 0);
+    var hx = tx + ux + (p.hx || 0) + cfg.headOX, hy = ty + cfg.headOY + (p.h || 0);
     if (mitKopf) {
       draw(sctx, headName, hx, hy, false, false);
       if (hu) draw(sctx, hu.spr, hx + hu.ox, hy + hu.oy, false, false);
     }
-    if (mitKoerper) draw(sctx, ko ? ko.arm : (cfg.armFront || cfg.arm), tx + cfg.armFrontOX + p.aF[0], ty + cfg.armOY + p.aF[1], false, false);
+    if (mitKoerper) draw(sctx, ko ? ko.arm : (cfg.armFront || cfg.arm), tx + ux + cfg.armFrontOX + p.aF[0], ty + cfg.armOY + p.aF[1], false, false);
 
     if (opts.flash) {
       sctx.save();
@@ -3144,7 +3147,7 @@
     var frames = POSES[opts.pose || 'idle'] || POSES.idle;
     var p = frames[(opts.frame || 0) % frames.length];
     var tx = ORIGIN_X - Math.floor(get(cfg.torso).w / 2), ty = ORIGIN_Y - cfg.footY + (p.t || 0);
-    var hx = tx + cfg.headOX, hy = ty + cfg.headOY + (p.h || 0), kopf = get(cfg.heads.normal);
+    var hx = tx + (p.x || 0) + (p.hx || 0) + cfg.headOX, hy = ty + cfg.headOY + (p.h || 0), kopf = get(cfg.heads.normal);
     var sc = opts.scale || 1, sp = opts.flip ? -1 : 1;
     var hid = opts.hut !== undefined ? opts.hut : ((who === 'yusuf' || who === 'yusuf_as') ? tracht.hut : null);
     var hu = (hid && HUETE[hid]) || null, hs = hu ? get(hu.spr) : null;

@@ -144,6 +144,50 @@
     src.stop(t0 + dur + 0.02);
   }
 
+  /** Tiefer, gefilterter Klang fuer die Kino-Momente (Horn, Akkorde, Sog).
+      lp0 -> lp1 (nach dem Anschlag) -> lp2: der Filter oeffnet und schliesst.
+      schwell: wird bis zum Ende immer lauter und bricht dann ab (Sog). */
+  function brumm(o) {
+    if (!ready || muted) return;
+    var t0 = o.at !== undefined ? o.at : ctx.currentTime, dur = o.dur || 1;
+    var osc = ctx.createOscillator(), f = ctx.createBiquadFilter(), g = ctx.createGain();
+    osc.type = o.wave || 'sawtooth';
+    osc.frequency.setValueAtTime(o.f0, t0);
+    if (o.f1 && o.f1 !== o.f0) osc.frequency.exponentialRampToValueAtTime(o.f1, t0 + dur);
+    var atk = o.attack || 0.05, peak = o.gain === undefined ? 0.4 : o.gain;
+    f.type = 'lowpass';
+    f.Q.value = o.q === undefined ? 1.2 : o.q;
+    f.frequency.setValueAtTime(o.lp0 || 200, t0);
+    if (o.schwell) {
+      f.frequency.exponentialRampToValueAtTime(o.lp1 || 2400, t0 + dur);
+      g.gain.setValueAtTime(0.0001, t0);
+      g.gain.exponentialRampToValueAtTime(peak, t0 + dur);
+      g.gain.exponentialRampToValueAtTime(0.0001, t0 + dur + 0.05);
+    } else {
+      f.frequency.exponentialRampToValueAtTime(o.lp1 || 1200, t0 + atk + 0.12);
+      f.frequency.exponentialRampToValueAtTime(o.lp2 || 150, t0 + dur);
+      g.gain.setValueAtTime(0.0001, t0);
+      g.gain.exponentialRampToValueAtTime(peak, t0 + atk);
+      if (o.halten) g.gain.setValueAtTime(peak, t0 + atk + o.halten);
+      g.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
+    }
+    osc.connect(f); f.connect(g); g.connect(sfxGain);
+    osc.start(t0);
+    osc.stop(t0 + dur + 0.08);
+  }
+
+  /** Musik leiser/lauter drehen, ohne sie anzuhalten (Boss-Kino: Stille vor
+      der Verwandlung, die Musik kommt mit dem Ausbruch zurueck). */
+  var daempf = 1;
+  function daempfen(ziel, sek) {
+    daempf = Math.max(0, Math.min(1, ziel));
+    if (!ready || !musicGain) return;
+    var t = ctx.currentTime, v = Math.max(0.0001, MUSIK_BASIS * musikVol * daempf);
+    musicGain.gain.cancelScheduledValues(t);
+    musicGain.gain.setValueAtTime(Math.max(0.0001, musicGain.gain.value), t);
+    musicGain.gain.linearRampToValueAtTime(v, t + Math.max(0.02, sek === undefined ? 0.3 : sek));
+  }
+
   /* ------------------------- Drums ------------------------- */
 
   function kick(at, bus) {
@@ -414,7 +458,7 @@
       drums: 'K.SSK.S.K.SSK.SS'
     },
 
-    // Sonnet: Hicaz wie beim Doenermann, nur mit Stiefeln
+    // Samet: Hicaz wie beim Doenermann, nur mit Stiefeln
     sonnet: {
       bpm: 170, duty: 'p125',
       lead: S(`D5 . D#5 . F#5 . G5 . A5 . G5 . F#5 . D#5 .
@@ -800,6 +844,8 @@
 
   function playMusic(name) {
     if (!init()) return;
+    // Ein neues Stueck ist nie gedaempft (falls ein Boss-Film abgebrochen wurde)
+    if (daempf < 1 && curName !== name) daempfen(1, 0.05);
     if (curName === name) return;
     var song = SONGS[name];
     curName = name;
@@ -1021,7 +1067,7 @@
       noise({ filter: 'lowpass', f0: 3000, f1: 300, dur: 0.2, gain: 0.4 });
       tone({ wave: 'sine', f0: 300, f1: 80, dur: 0.15, gain: 0.45 });
     },
-    // Ein BB trifft Sonnet
+    // Ein BB trifft Samet
     plopp: function () {
       tone({ wave: 'p50', f0: 700, f1: 300, dur: 0.05, gain: 0.24 });
     },
@@ -1099,6 +1145,82 @@
     terlik: function () {
       noise({ filter: 'bandpass', f0: 1600, f1: 700, dur: 0.07, gain: 0.55, q: 0.8 });
       tone({ wave: 'p50', f0: 240, f1: 90, dur: 0.08, gain: 0.3 });
+    },
+    /* --- Boss-Kino (bosskino.js, auftritt.js) --- */
+    // Tiefes Horn: BRAAAM. Der Boss ist gleich da.
+    horn: function () {
+      if (!init()) return;
+      var t = ctx.currentTime;
+      brumm({ at: t, f0: 55, f1: 51, dur: 2.6, gain: 0.55, lp0: 160, lp1: 1500, lp2: 120, attack: 0.09, halten: 0.5 });
+      brumm({ at: t, f0: 82.4, f1: 77, dur: 2.4, gain: 0.34, lp0: 160, lp1: 1300, lp2: 120, attack: 0.11, halten: 0.4 });
+      brumm({ at: t, f0: 110, f1: 103, dur: 2.2, gain: 0.2, lp0: 200, lp1: 1800, lp2: 160, attack: 0.12, halten: 0.3 });
+      noise({ at: t, filter: 'lowpass', f0: 240, f1: 50, dur: 2.2, gain: 0.32, q: 0.7 });
+    },
+    // Der Boden grollt
+    grollen: function () {
+      if (!init()) return;
+      var t = ctx.currentTime;
+      noise({ at: t, filter: 'lowpass', f0: 160, f1: 50, dur: 1.4, gain: 0.42, q: 0.6 });
+      tone({ at: t, wave: 'sine', f0: 48, f1: 36, dur: 1.2, gain: 0.4, attack: 0.2 });
+    },
+    // Herzschlag: bumm-bumm
+    herzschlag: function (n) {
+      if (!init()) return;
+      var t = ctx.currentTime, k = Math.min(1.4, 0.7 + (n || 0) * 0.2);
+      tone({ at: t, wave: 'sine', f0: 78, f1: 38, dur: 0.16, gain: 0.75 * k });
+      noise({ at: t, filter: 'lowpass', f0: 260, f1: 60, dur: 0.1, gain: 0.25 * k });
+      tone({ at: t + 0.21, wave: 'sine', f0: 66, f1: 34, dur: 0.18, gain: 0.5 * k });
+    },
+    // Alles wird eingesogen, immer lauter — dann der Ausbruch
+    sog: function (sek) {
+      if (!init()) return;
+      var t = ctx.currentTime, d = sek || 1.3;
+      brumm({ at: t, f0: 42, f1: 150, dur: d, gain: 0.5, lp0: 120, lp1: 2600, schwell: true, q: 3 });
+      brumm({ at: t, f0: 63, f1: 225, dur: d, gain: 0.26, lp0: 160, lp1: 3400, schwell: true, q: 2 });
+      if (!ready || muted) return;
+      // Rauschen, das hochzieht (wie Luft, die gesaugt wird)
+      var src = ctx.createBufferSource(), f = ctx.createBiquadFilter(), g = ctx.createGain();
+      src.buffer = noiseBuf; src.loop = true;
+      f.type = 'bandpass'; f.Q.value = 1.4;
+      f.frequency.setValueAtTime(300, t);
+      f.frequency.exponentialRampToValueAtTime(4200, t + d);
+      g.gain.setValueAtTime(0.0001, t);
+      g.gain.exponentialRampToValueAtTime(0.3, t + d);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + d + 0.04);
+      src.connect(f); f.connect(g); g.connect(sfxGain);
+      src.start(t); src.stop(t + d + 0.1);
+    },
+    // Der Ausbruch: tief, breit, mit Knall vorne und Grollen hinten
+    impakt: function () {
+      if (!init()) return;
+      var t = ctx.currentTime;
+      noise({ at: t, filter: 'highpass', f0: 1800, f1: 600, dur: 0.1, gain: 0.45 });
+      tone({ at: t, wave: 'sine', f0: 110, f1: 24, dur: 1.5, gain: 0.95 });
+      noise({ at: t, filter: 'lowpass', f0: 3600, f1: 45, dur: 1.8, gain: 0.62, q: 0.5 });
+      brumm({ at: t, f0: 62, f1: 31, dur: 1.4, gain: 0.42, lp0: 2400, lp1: 1200, lp2: 90, attack: 0.01 });
+      noise({ at: t + 0.12, filter: 'bandpass', f0: 900, f1: 120, dur: 1.1, gain: 0.22, q: 0.6 });
+    },
+    // Der Name erscheint: ein dunkler Akkord (Moll), lange ausklingend
+    enthuellung: function () {
+      if (!init()) return;
+      var t = ctx.currentTime, noten = [65.4, 98, 130.8, 155.6, 196];
+      for (var i = 0; i < noten.length; i++) {
+        brumm({ at: t + i * 0.012, f0: noten[i], dur: 2.8, gain: 0.2 - i * 0.02, lp0: 300, lp1: 1700, lp2: 180,
+                attack: 0.03, halten: 0.25 });
+      }
+      tone({ at: t, wave: 'sine', f0: 32.7, dur: 2.4, gain: 0.55, attack: 0.02 });
+      noise({ at: t, filter: 'highpass', f0: 5200, dur: 0.6, gain: 0.08 });
+    },
+    // Feind bezwungen: warmer Dur-Akkord, der aufgeht, und eine Glocke
+    bezwungen: function () {
+      if (!init()) return;
+      var t = ctx.currentTime, noten = [130.8, 164.8, 196, 261.6, 329.6];
+      for (var i = 0; i < noten.length; i++) {
+        brumm({ at: t + i * 0.05, f0: noten[i], dur: 3.0, gain: 0.17, lp0: 400, lp1: 2200, lp2: 300,
+                attack: 0.22, halten: 0.6, wave: i % 2 ? 'triangle' : 'sawtooth' });
+      }
+      tone({ at: t + 0.3, wave: 'sine', f0: 1046.5, dur: 2.2, gain: 0.16, attack: 0.005 });
+      tone({ at: t + 0.3, wave: 'sine', f0: 1568, dur: 1.6, gain: 0.07, attack: 0.005 });
     },
     // Ein Gong fuer die grossen Momente
     gong: function () {
@@ -1447,6 +1569,8 @@
     play: play,
     music: playMusic,
     stopMusic: stopMusic,
+    /** Musik weich leiser (0) oder wieder laut (1), in sek Sekunden. */
+    daempfen: daempfen,
     tempo: setTempo,
     taktPos: taktPos,
     /** Welcher Song gerade laeuft (fuer die Minispiele). */
@@ -1458,7 +1582,7 @@
     setLautstaerke: function (musik, effekte) {
       musikVol = Math.max(0, Math.min(1, musik));
       effektVol = Math.max(0, Math.min(1, effekte));
-      if (musicGain) musicGain.gain.value = MUSIK_BASIS * musikVol;
+      if (musicGain) musicGain.gain.value = MUSIK_BASIS * musikVol * daempf;
       if (sfxGain) sfxGain.gain.value = EFFEKT_BASIS * effektVol;
     },
     toggleMute: function () { setMuted(!muted); return muted; }

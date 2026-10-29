@@ -106,15 +106,31 @@
     },
 
     /* ---------- Airsoft (Level 21) ---------- */
+    /* Esat, 26.10.: "beim Airsoft muss man auch nachladen und hat nur 30
+       Schuss pro Magazin, und mach es schwerer". Nachladen jetzt selbst mit
+       R (Controller: Y; am Handy von allein), der Vorrat ist begrenzt —
+       besiegte Gegner lassen manchmal ein BB-Paeckchen fallen. */
     AIRSOFT: {
       MAGAZIN: 30,             // BBs pro Magazin
-      NACHLADEN: 70,           // Dauer des Nachladens
+      NACHLADEN: 84,           // Dauer des Nachladens (vorher 70, und von allein)
+      VORRAT: 90,              // BBs in der Tasche, nach jedem Tod wieder so viele
+      VORRAT_MAX: 180,         // mehr passt nicht in die Weste
+      PAECKCHEN: 30,           // so viele BBs liegen in einem Paeckchen
+      FALLEN_LASSEN: 0.45,     // so oft laesst ein besiegter Gegner eins fallen
       BB_TAKT: 7,              // Ticks zwischen zwei Schuessen (antippen)
       BB_DAUER: 11,            // ... und bei gehaltener Taste
       BB_TEMPO: 7.5,
-      BB_BOSS: 1 / 4,          // so viel Schaden macht ein BB bei Sonnet
-      FENSTER: 2               // hoechstens so viel BB-Schaden pro Gelegenheit
+      BB_BOSS: 1 / 4,          // so viel Schaden macht ein BB bei Samet
+      FENSTER: 1.5,            // hoechstens so viel BB-Schaden pro Gelegenheit (vorher 2)
                                // (er zielt, wirft, laedt nach, Panne)
+      // Schwerer (26.10.):
+      SOLDAT_TAKT: 84,         // so oft ueberlegt ein Soldat, ob er zielt (vorher 110)
+      SOLDAT_ZIELT: 20,        // so lange zielt er, bevor er schiesst (vorher 24)
+      GEGNER_BB: 3.8,          // Tempo ihrer BBs (vorher 3.2)
+      GRENA_TAKT: 120,         // so oft wirft der Granatenwerfer (vorher 150)
+      SNIPER_TAKT: 135,        // so oft legt der Sniper an (vorher 170)
+      HIGHLANDER: 4,           // so viele BBs braucht der Highlander (vorher 3)
+      SAMET: 14                // Energie pro Herz (vorher 12)
     },
 
     /* ---------- Doener und Pizza (Level 20 und 23) ----------
@@ -155,8 +171,8 @@
        Seit den drei Herzen fuer alle ist die Gesamtenergie ungefaehr die
        von vorher, nur auf drei Balken verteilt (in Klammern: vorher gesamt). */
     // Vorher: Lennart und Erfan (Level 3/4) waren schwerer als Huseyin;
-    // Esat, Broke, Hamza, Felix und Sonnet brachten dem Durchschnittsspieler
-    // 3-4 Game Over; Sonnet schwankte zwischen 0:40 und 4 Minuten.
+    // Esat, Broke, Hamza, Felix und Samet brachten dem Durchschnittsspieler
+    // 3-4 Game Over; Samet schwankte zwischen 0:40 und 4 Minuten.
     BOSS_HP: {
       mirkan: 3,     // (10)
       lennart: 3,    // (9)
@@ -179,7 +195,7 @@
        Yusuf macht an jedem Boss 30 % weniger Schaden. Umgesetzt als mehr
        Energie pro Herz (Energie / 0.7): ein Sprung zaehlt weiter 1, der
        Stampfer 0.5, ein BB ein Viertel — es braucht nur mehr davon. So
-       gilt es fuer alle Bosse gleich, auch fuer Sonnets BBs und den Riesen. */
+       gilt es fuer alle Bosse gleich, auch fuer Samets BBs und den Riesen. */
     SCHADEN_AN_BOSSE: 0.7,
 
     /* ---------- Die Kraftprobe am Ende (Level 30) ----------

@@ -386,6 +386,8 @@
 
   /** Stauchen und Strecken fuer drawPlayer */
   function form(G) {
+    // Mit animation.js federt der Bauch nach (Gummi statt linear)
+    if (global.Anim) return global.Anim.form(G);
     var p = G.player;
     if (G.squash > 0) { var s = G.squash / 8; return { sx: 1 + 0.22 * s, sy: 1 - 0.18 * s }; }
     if (!p.grounded && !p.dead && p.vy < -3) return { sx: 0.9, sy: 1.1 };

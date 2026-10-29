@@ -2903,7 +2903,7 @@
     .kkkk.
   `, { k: '#141018', g: '#4a6a32', G: '#6a8a4a', y: '#c8c8d0' });
 
-  /* Boerek von Sonnets Mutter. Goldbraun, gerollt, gefaehrlich lecker. */
+  /* Boerek von Samets Mutter. Goldbraun, gerollt, gefaehrlich lecker. */
   P.def('boerek', `
     ....kkkkkkkk....
     ..kkyYyyyYyykk..

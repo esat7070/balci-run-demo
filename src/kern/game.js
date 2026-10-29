@@ -166,6 +166,7 @@
      hat, liest Controller-Tasten statt Tastatur-Namen (Steam Deck:
      keine Tastatur-Hinweise, wenn keine Tastatur benutzt wird). */
   var PAD_WORTE = [
+    [/R = NACHLADEN/g, 'Y = NACHLADEN'],
     [/SHIFT \/ E/g, 'X'], [/SHIFT/g, 'X'], [/C ODER SPRUNG/g, 'A'],
     [/ESC = /g, 'B = '], [/ESC /g, 'B '],
     [/ESSEN MIT DER MAUS ZU YUSUF ZIEHEN\. ODER /g, 'ESSEN: '],
@@ -173,6 +174,7 @@
   ];
   // Dasselbe fuer Englisch: dort wird erst uebersetzt, dann ersetzt
   var PAD_WORTE_EN = [
+    [/R = RELOAD/g, 'Y = RELOAD'],
     [/SHIFT \/ E/g, 'X'], [/SHIFT/g, 'X'], [/C OR JUMP/g, 'A'],
     [/ESC = /g, 'B = '], [/ESC /g, 'B '],
     [/DRAG FOOD TO YUSUF WITH THE MOUSE\. OR /g, 'FOOD: '],
@@ -240,7 +242,7 @@
   var NEUE_BOSSE = {
     riese: { cls: 'BossRiese', musik: 'riese', dialog: 'riese', ganzesLevel: true },
     nils:  { cls: 'BossNils', musik: 'nils', dialog: 'nils' },
-    // Level 21: Sonnet. Nach der Mutation (im Buggy) laeuft andere Musik.
+    // Level 21: Samet. Nach der Mutation (im Buggy) laeuft andere Musik.
     sonnet: { cls: 'BossSonnet', musik: 'sonnet', musik2: 'buggy', dialog: 'sonnet' },
     // Level 26: Felix im Cockpit (felix.js). Als Felix Dogg laeuft G-Funk.
     felix: { cls: 'BossFelix', musik: 'felix', musik2: 'felixdogg', dialog: 'felix' },
@@ -284,6 +286,7 @@
     G.schwere = 1; G.wind = 0; G.klein = 0; G.dim = null; G.riss = null;
     G.wut = !!lvl.wut;        // Level 30: Yusuf rastet aus
     G.autoAx = null; G.autoMax = 0; G.camFocus = null; G.auftritt = null;
+    if (global.BossKino) global.BossKino.reset(G);
     G.talk = {};
     G.wo = {};                // wo Figuren ohne feste Stelle gerade reden (Mirkan)
     // Der Rausch gehoert zum Kampf: wer stirbt, wacht nuechtern auf.
@@ -338,7 +341,7 @@
     G.player.w = lvl.bike ? 20 : 12;
     G.player.h = lvl.bike ? 28 : 26;
     G.player.y = sp[1] * T - G.player.h;
-    // Ein Kumpel kommt mit (Level 14 und 15 Esat zu Fuss, Level 22 Sonnet) —
+    // Ein Kumpel kommt mit (Level 14 und 15 Esat zu Fuss, Level 22 Samet) —
     // immer auf Yusufs Spur, siehe updateRider
     G.rider = (lvl.bike || lvl.buddy) ? { hist: [], talkT: 260 } : null;
     G.dizzy = 0;
@@ -437,7 +440,7 @@
 
   /* ================= Ein Kumpel faehrt mit ================= */
 
-  // Der Kumpel (Esat, Sonnet) faehrt Yusufs Spur nach, ein Stueck dahinter. So springt er ueber
+  // Der Kumpel (Esat, Samet) faehrt Yusufs Spur nach, ein Stueck dahinter. So springt er ueber
   // dieselben Rampen und Luecken, ohne eigene Physik zu brauchen.
   var RIDER_GAP = 46;
 
@@ -645,7 +648,7 @@
 
   /** Jede Verwandlung sieht gleich aus: erst die Karte mit der neuen Form
       und dem Herz, bei dem der Boss jetzt ist, dann das Gespraech. Wer
-      schon eine eigene Karte im Gespraech hat (Mirkans Felgen, Sonnets
+      schon eine eigene Karte im Gespraech hat (Mirkans Felgen, Samets
       Buggy, Felix Dogg), behaelt sie. Semihs Formen haben ihre eigenen. */
   function mutationsKarte(lines) {
     var b = G.boss;
@@ -657,11 +660,48 @@
     return [['karte', name + ' MUTIERT|' + b.rageName + ' - HERZ ' + herz + ' VON ' + b.lebenMax + '|' + b.rageCol]].concat(lines);
   }
 
+  /** Mit welchem Gespraech ein Boss nach einer Verwandlung redet (wie die
+      G.on...Phase-Funktionen unten). */
+  function phasenDialog(bt) {
+    if (NEUE_BOSSE[bt]) return LV[NEUE_BOSSE[bt].dialog];
+    if (E.MINIBOSS[bt]) return LV.mini[bt];
+    return bt === 'huseyin' ? LV.boss : LV[bt];
+  }
+  function phasenZeilen(b) {
+    var d = phasenDialog(G.lvl.bossType);
+    if (!d) return null;
+    if (b.formen) return d.formen && d.formen[b.form];
+    var ph = b.lebenMax ? b.lebenMax - b.leben + 1 : 2;
+    return E.MINIBOSS[G.lvl.bossType] ? ((ph === 3 && d.phase3) || d.phase2) : phaseLines(d, ph);
+  }
+
+  /** Was die grosse Verwandlung (bosskino.js) einblendet: [klein oben,
+      gross, klein unten, Farbe]. Hat das Gespraech danach eine eigene
+      Karte am Anfang (Mirkans Felgen, Semihs Formen), steht die da. */
+  G.formKarte = function (b) {
+    var z = phasenZeilen(b), kt = LV.bossKarten && LV.bossKarten[G.lvl.bossType];
+    var name = (kt && kt[0]) || b.barName || 'DER BOSS';
+    if (z && z[0] && z[0][0] === 'karte') {
+      var t = String(z[0][1]).split('|');
+      return [t[0].indexOf(name.split(' ')[0]) >= 0 ? null : name, t[0], t[1] || null, t[2] || b.rageCol];
+    }
+    return [name, b.rageName || '', null, b.rageCol];
+  };
+
   /** Verwandlung (ein Herz ist leer): Fliegendes weg (sonst haengt beim
       Weiterspielen noch ein Salatblatt in der Luft, das man nie kommen
-      sah), kurz unverwundbar, dann redet der Boss. */
+      sah), kurz unverwundbar, dann redet der Boss. Lief gerade die grosse
+      Verwandlung (bosskino.js), redet er erst, wenn sein neuer Name zu
+      sehen war — und ohne Karte, die hat der Film schon gezeigt. */
   function bossPhase(lines, invuln) {
-    lines = mutationsKarte(lines);
+    if (global.BossKino && global.BossKino.haelt(G, function () {
+      if (lines && lines[0] && lines[0][0] === 'karte') lines = lines.slice(1);
+      bossPhaseJetzt(lines, invuln, true);
+    })) return;
+    bossPhaseJetzt(lines, invuln, false);
+  }
+  function bossPhaseJetzt(lines, invuln, gefilmt) {
+    if (!gefilmt) lines = mutationsKarte(lines);
     G.bossHalf = true;
     clearShots();
     var p = G.player;
@@ -696,6 +736,8 @@
     G.flashScreen('#ffffff', 30);
     G.shake(10, 30);
     S.play('win');
+    // FEIND BEZWUNGEN, die Kamera geht ein Stueck ran (bosskino.js)
+    if (b && global.BossKino) global.BossKino.sieg(G, b);
     if (b) {
       if (EB) EB.einschlag(G, b.cx(), b.y + b.h / 2, 'sieg');
       G.particles.burst(b.cx(), b.y + b.h / 2, 60, { col: '#ffd257', spread: 5, up: 2, life: 70, grav: 0.1 });
@@ -976,7 +1018,7 @@
     schlafen('traum');
   };
 
-  /* ---------- Sonnet, Level 21 ---------- */
+  /* ---------- Samet, Level 21 ---------- */
 
   G.onSonnetPhase = function (phase) {
     bossPhase(phaseLines(LV.sonnet, phase));
@@ -1636,6 +1678,8 @@
 
     if (!frozen) G.world.updateMovers();
     p.update(G);
+    // Laufzyklus, Salto, Federn, Kante, Langeweile — nur fuers Aussehen (animation.js)
+    if (global.Anim) global.Anim.tick(G);
     // Staub, Stauchen, Aura-Farming, Grabsteine (spass.js)
     if (global.Spass && !frozen) global.Spass.tick(G);
     if (global.Shop && !frozen) global.Shop.tick(G);
@@ -1818,17 +1862,21 @@
         if (global.Waffen) d0 = global.Waffen.bossZeilen(G, bt, d0);
         // Erst das Standbild mit Namen (wie im Kino), dann das Gespraech.
         // Nach einem Tod (auch mit allen Leben) kommt beides nicht wieder.
+        // Mit Auftritt (auftritt.js) zeigt der Film den Namen schon selbst.
+        var mitAuftritt = !!(global.Auftritt && !G.keinAuftritt);
         var kt = LV.bossKarten && LV.bossKarten[bt];
-        if (kt) d0 = [['karte', kt.join('|')]].concat(d0 || []);
+        if (kt && !mitAuftritt) d0 = [['karte', kt.join('|')]].concat(d0 || []);
         var gespraech = function () { if (d0) startDialog(d0, function () { G.state = 'play'; }); };
-        // Erst der Auftritt (auftritt.js): Kinobalken, BOSSKAMPF!, der Boss kommt rein
-        if (global.Auftritt && !G.keinAuftritt) global.Auftritt.start(G, G.boss, bt, gespraech);
+        // Erst der Auftritt: Stille, Horn, der Boss kommt rein, sein Name, die Musik
+        if (mitAuftritt) global.Auftritt.start(G, G.boss, bt, gespraech);
         else gespraech();
       }
     }
 
     // Der Boss bewegt sich im Dialog nicht — nur seine Todesanimation läuft weiter.
-    if (G.boss && (!frozen || G.boss.dead)) G.boss.update(G);
+    // Und seine Verwandlung, waehrend die Welt dafuer stillsteht (bosskino.js).
+    var vwBoss = G.verwandlung && G.verwandlung.los && G.boss && G.boss.state === 'transform';
+    if (G.boss && (!frozen || G.boss.dead || vwBoss)) G.boss.update(G);
 
     // Ziel
     if (!p.won && !p.dead) {
@@ -1848,6 +1896,8 @@
     if (G.dizzy > 0 && !frozen) G.dizzy--;
     // Boss-Auftritt (auftritt.js): der Boss kommt rein, die Kamera schaut hin
     if (G.auftritt && global.Auftritt) global.Auftritt.tick(G);
+    // Verwandlung, Kamera-Zoom, Druckwellen, Name, FEIND BEZWUNGEN (bosskino.js)
+    if (global.BossKino) global.BossKino.tick(G);
     updateCamera();
     if (G.banner > 0) G.banner--;
   }
@@ -2355,7 +2405,9 @@
       // Semih: Sepia, zerspringendes Bild, Anzeige der Kraftprobe
       if (global.SemihKampf) global.SemihKampf.overlay(ctx, G, W, H);
       var eigen = G.modus && G.modMod.full;
-      if (!G.eat && !G.scene && !G.cut && !eigen && !G.auftritt) drawHUD();
+      if (!G.eat && !G.scene && !G.cut && !eigen && !G.auftritt && !G.verwandlung) drawHUD();
+      // Boss-Kino: Farbe weg, Dunkelheit, Sog, Blitz, Kinobalken, Name, FEIND BEZWUNGEN
+      if (global.BossKino && !G.scene && !G.eat && !eigen) global.BossKino.oben(ctx, G, W, H);
       if (G.auftritt && global.Auftritt) global.Auftritt.draw(ctx, G, W, H);
       if (G.modus && !eigen && G.modMod.hud && !G.scene) G.modMod.hud(ctx, G, W, H);
       if (G.state === 'paused') drawPause();
@@ -2828,7 +2880,7 @@
             rect(x + 62, ry, 30, 1, '#4a4a54');
           }
         } else if (deko === 2) {
-          // Team-Fahne: Tuerkei (Team Sonnet)
+          // Team-Fahne: Tuerkei (Team Samet)
           rect(x + 80, 130, 3, 110, '#6a6a74');
           var fwv = Math.sin(G.tick * 0.06 + i) * 2;
           rect(x + 83, 132 + fwv, 36, 22, '#d8282e');
@@ -3207,6 +3259,14 @@
     }
     var camX = Math.round(G.cam.x + G.cam.sx), camY = Math.round(G.cam.y + G.cam.sy);
     var theme = G.world.theme, maxY = maxCamY();
+    // Boss-Kino (bosskino.js): die Kamera geht naeher ran — die ganze Welt
+    // wird vergroessert gezeichnet, Bloom und Farbe danach wieder normal.
+    var fz = global.BossKino ? global.BossKino.zoom(G, camX, camY, W, H) : null;
+    if (fz) {
+      ctx.save();
+      ctx.translate(Math.round((W / 2 - fz.sx * fz.z) * RS) / RS, Math.round((H / 2 - fz.sy * fz.z) * RS) / RS);
+      ctx.scale(fz.z, fz.z);
+    }
     hintergrund(theme, camX, camY, maxY, function () {
       drawSky(theme);
       // Der Hintergrund ist fuer 288 Pixel Hoehe gezeichnet. In der
@@ -3402,6 +3462,8 @@
       P.draw(ctx, pr.spr, pr.x - camX, pr.y - camY, pr.vx < 0);
     }
 
+    // Lichtsaeule, Risse im Boden, Schatten beim Auftritt (bosskino.js)
+    if (global.BossKino) global.BossKino.hinten(ctx, G, camX, camY, W, H);
     if (G.boss && !G.boss.auftrittVersteckt) drawBoss(camX, camY);
     // Level 21: Mirkan, sein Mercedes und was davon liegen bleibt
     if (G.lvl.mirkanCut && global.Airsoft) global.Airsoft.mirkanDraw(ctx, G, camX, camY);
@@ -3420,12 +3482,16 @@
     if (global.Strecke) global.Strecke.vorne(ctx, G, camX, camY);
     if (G.fress) global.Fress.draw(ctx, G, camX, camY);
     drawParticles(camX, camY);
+    // Druckwellen, Brocken, Blitz, Glut in der Luft (bosskino.js)
+    if (global.BossKino) global.BossKino.vorne(ctx, G, camX, camY, W, H);
     drawFloats(camX, camY);
     drawTalk(camX, camY);
 
+    // Vorne: Licht, Strahlen, Teilchen, Silhouetten — noch mit Zoom
+    if (EB) EB.vorne(ctx, G, theme, camX, camY, W, H, { maxY: maxY });
+    if (fz) ctx.restore();
     if (EB) {
-      // Vorne: Licht, Strahlen, Teilchen, Silhouetten; dann Bloom, Farbe, Vignette
-      EB.vorne(ctx, G, theme, camX, camY, W, H, { maxY: maxY });
+      // dann Bloom, Farbe, Vignette (ueber das fertige Bild, ohne Zoom)
       EB.nachher(ctx, theme, canvas, W, H);
     } else {
       // leichte Abdunklung an den Rändern
@@ -3517,7 +3583,7 @@
 
   /* ---------- Level 21: das Fort ----------
      Palisade aus Baumstaemmen, Sandsaecke, ein Tarnnetz ueber dem Bunker
-     und Sonnets Team-Banner. Alles Kulisse — gekaempft wird davor. */
+     und Samets Team-Banner. Alles Kulisse — gekaempft wird davor. */
 
   function drawFort(camX, camY) {
     var a = G.arena || (G.lvl.arena ? { x: G.lvl.arena.x * T, w: G.lvl.arena.w * T } : null);
@@ -3536,7 +3602,7 @@
     }
     rect(x0, gy - 120, a.w, 3, '#3a2a1a');                 // Querbalken
     rect(x0, gy - 60, a.w, 3, '#3a2a1a');
-    // Banner: TEAM SONNET, mit Patch
+    // Banner: TEAM SAMET, mit Patch
     var bx = x0 + a.w / 2 - 70;
     rect(bx, gy - 150, 140, 24, '#2a3a1e');
     rect(bx, gy - 150, 140, 2, '#c8b87a');
@@ -3546,7 +3612,7 @@
     ctx.fillStyle = '#d8282e';
     ctx.beginPath(); ctx.arc(bx + 15.5, gy - 138, 3.6, 0, 6.3); ctx.fill();
     rect(bx + 19, gy - 139, 2, 2, '#f4f2ec');
-    F.draw(ctx, 'TEAM SONNET', bx + 82, gy - 142, { color: '#e8d8a0', align: 'center' });
+    F.draw(ctx, 'TEAM SAMET', bx + 82, gy - 142, { color: '#e8d8a0', align: 'center' });
     // Sandsaecke an den Seiten
     for (i = 0; i < 2; i++) {
       var sx = i ? x0 + a.w - 70 : x0 + 20;
@@ -3627,7 +3693,7 @@
       return;
     }
     if (G.lvl.buddy === 'sonnet' && global.Airsoft) {
-      // Sonnet faehrt im Buggy hinterher — und macht die Saltos mit
+      // Samet faehrt im Buggy hinterher — und macht die Saltos mit
       var bl = rampLift(pos.x, pos.y), bdir = pos.f < 0 ? -1 : 1;
       var bx = Math.round(pos.x - camX), byy = Math.round(pos.y - camY - bl);
       ctx.save();
@@ -3729,6 +3795,11 @@
       ctx.globalAlpha = 1;
       return;
     }
+    // Wippen, Neigen, Pfannkuchen, Davonwirbeln (animation.js)
+    if (global.Anim && global.Anim.gegner(ctx, G, e, spr, camX, camY)) {
+      drawEnemyZeichen(e, px, py, camX, camY);
+      return;
+    }
     if (e.dead) {
       ctx.save();
       ctx.globalAlpha = Math.max(0, 1 - e.deadTimer / 60);
@@ -3741,7 +3812,12 @@
     if (e.stun > 0) py += Math.sin(G.tick * 0.5) * 1;
     if (e.flash > 0 && (G.tick >> 1) % 2 === 0) P.drawWhite(ctx, spr, px, py, e.facing < 0);
     else P.draw(ctx, spr, px, py, e.facing < 0);
+    drawEnemyZeichen(e, px, py, camX, camY);
+  }
 
+  /** Was ueber einem Gegner steht: !, Laser, Sternchen */
+  function drawEnemyZeichen(e, px, py, camX, camY) {
+    if (e.dead) return;
     if (e.t === 'bro' && e.charge > 0 && G.tick % 8 < 4) {
       F.draw(ctx, '!', px + e.w / 2, py - 10, { color: '#ff6fa8', align: 'center' });
     }
@@ -3778,9 +3854,13 @@
     }
 
     var ps = p.pose();
+    // Lebendiger: Laufen mit 8 Bildern, Bremsen, Salto, an der Kante wackeln,
+    // Langeweile, Gummibauch ... (animation.js; aendert nur das Aussehen)
+    var an = global.Anim ? global.Anim.spieler(G, p, ps) : null;
+    if (an) ps = { pose: an.pose, face: an.face, frame: an.frame };
     var opts = {
       pose: ps.pose, face: ps.face,
-      frame: p.anim, flip: p.facing < 0
+      frame: an ? an.frame : p.anim, flip: an ? an.flip : p.facing < 0
     };
     if (p.power > 0) {
       // Gold-Döner: goldener Schimmer + Funken
@@ -3811,6 +3891,9 @@
     var fm = global.Spass ? global.Spass.form(G) : { sx: 1, sy: 1 };
     var klein = G.klein || 1;
     var wer = G.lvl.airsoft ? 'yusuf_as' : 'yusuf';
+    // Salto, Ueberschlag, Kippen, Huepfen: dreht Figur, Waffe und Tueten mit
+    ctx.save();
+    if (an) global.Anim.anwenden(ctx, an, p, camX, camY);
     ctx.save();
     ctx.translate(Math.round(p.cx() - camX), Math.round(p.feet() - camY));
     if (ps.pose === 'rutsch' && !p.dead) {
@@ -3842,11 +3925,11 @@
     if (p.waffe && !p.dead && global.Waffen) global.Waffen.zeichnen(ctx, G, p, camX, camY, ps);
     // Level 21: die Leihwaffe. Wer HIT ruft, hat beide Haende oben.
     if (G.lvl.airsoft && !p.hitCall && global.Airsoft) {
-      var tief = (ps.pose === 'duck' || ps.pose === 'pound' || ps.pose === 'sleep') ? 3 : 0;
+      var tief = (ps.pose === 'duck' || ps.pose === 'pound' || ps.pose === 'sleep' || ps.pose === 'landung') ? 3 : 0;
       var vorn = 8;
       if (ps.pose === 'rutsch') { tief = 8; vorn = 16; }   // flach liegend: Waffe vorn am Boden
       global.Airsoft.drawGun(ctx, p.cx() - camX + p.facing * vorn, p.feet() - camY - 12 + tief,
-                             p.facing < 0, 1, p.muzzle > 0);
+                             p.facing < 0, 1, p.muzzle > 0, p.reload > 0 ? 1 - p.reload / global.Balance.AIRSOFT.NACHLADEN : -1);
       if (p.reload > 0 && (G.tick >> 3) % 2 === 0) {
         F.draw(ctx, 'NACHLADEN', p.cx() - camX, p.y - camY - 12, { color: '#c8c0d8', align: 'center', shadow: true });
       }
@@ -3858,6 +3941,9 @@
       P.draw(ctx, 'tuete', bgx - 17, bgy - 15);
       P.draw(ctx, 'tuete', bgx + 7, bgy - 13);
     }
+    ctx.restore();
+    // Doener-Gedanke, Angstschweiss an der Kante (animation.js)
+    if (an) global.Anim.extras(ctx, G, p, an, camX, camY);
 
     if (p.sleeping) {
       var zx = p.cx() - camX + 10 * p.facing, zy = p.y - camY - 6;
@@ -4439,16 +4525,23 @@
       if (p.waffe && global.Waffen) global.Waffen.hud(ctx, G, 108, 58);
     }
 
-    // Level 21: wie viele BBs noch im Magazin sind
+    // Level 21: BBs im Magazin / in der Tasche. Nachladen mit R (Esat, 26.10.)
     if (G.lvl.airsoft) {
+      var NL = global.Balance.AIRSOFT.NACHLADEN;
       rect(8, 70, 60, 6, 'rgba(6,4,10,0.6)');
       if (p.reload > 0) {
-        rect(8, 70, Math.round(60 * (1 - p.reload / 70)), 6, '#c8c0d8');
+        rect(8, 70, Math.round(60 * (1 - p.reload / NL)), 6, '#c8c0d8');
         if ((G.tick >> 3) % 2 === 0) F.draw(ctx, 'NACHLADEN', 72, 70, { color: '#c8c0d8', shadow: true });
       } else {
-        for (var mb = 0; mb < p.mag; mb++) rect(8 + mb * 2, 70, 1, 6, p.mag <= 6 ? '#ff8a8a' : '#c8ff6a');
-        F.draw(ctx, 'BBS ' + p.mag, 72, 70, { color: p.mag <= 6 ? '#ff8a8a' : '#c8ff6a', shadow: true });
+        var mcol = p.mag <= 6 ? '#ff8a8a' : '#c8ff6a';
+        for (var mb = 0; mb < p.mag; mb++) rect(8 + mb * 2, 70, 1, 6, mcol);
+        var bbw = F.draw(ctx, p.mag + ' / ' + (p.vorrat || 0), 72, 70, { color: mcol, shadow: true });
+        if (p.mag <= 6 && !G.touch && (G.tick >> 3) % 2 === 0) {
+          F.draw(ctx, (p.vorrat || 0) > 0 ? G.hinweis('R = NACHLADEN') : 'KEINE BBS MEHR - DRAUFSPRINGEN!', 80 + bbw, 70,
+                 { color: '#ffd257', shadow: true });
+        }
       }
+      if (global.Airsoft && global.Airsoft.ansageDraw) global.Airsoft.ansageDraw(ctx, G, W);
     }
 
     // Nach Hamzas HHC-Welle
@@ -4513,8 +4606,12 @@
       // nur die Glanzkante — kein weisses Blinken mehr.
       rect(x2 - 1, by2 - 1, w2 + 2, bh2 + 2, '#06040a');
       rect(x2, by2, w2, bh2, '#241830');
-      var hw = Math.round(w2 * Math.max(0, G.boss.hp) / G.boss.maxHp);
+      // Nach Auftritt und Verwandlung laeuft der Balken erst voll (bosskino.js)
+      var fuell = G.bossBarFill === undefined ? 1 : G.bossBarFill;
+      fuell = fuell * fuell * (3 - 2 * fuell);
+      var hw = Math.round(w2 * Math.max(0, G.boss.hp) / G.boss.maxHp * fuell);
       rect(x2, by2, hw, bh2, barCol);
+      if (fuell < 1 && hw > 0) rect(x2 + hw - 2, by2 - 1, 2, bh2 + 2, '#ffffff');
       var glanz = (G.boss.rage && G.boss.phase >= 3 && (G.tick >> 3) % 2 === 0) ? 0.7 : 0.35;
       rect(x2, by2, hw, 2, 'rgba(255,255,255,' + glanz + ')');
 
@@ -4580,7 +4677,7 @@
     nils:    { name: 'NILS', col: '#8ae0ff' },
     polizist: { name: 'POLIZIST', col: '#8ab4ff' },
     waerter: { name: 'WÄRTER', col: '#a8b8a8' },
-    sonnet:  { name: 'SONNET',  col: '#c8d86a' },
+    sonnet:  { name: 'SAMET',  col: '#c8d86a' },
     emre:    { name: 'EMRE',    col: '#f4f2ec' },
     felix:   { name: 'FELIX',   col: '#8ae07a' },
     kontrolle: { name: 'SICHERHEIT', col: '#8ab4ff' },
@@ -4768,12 +4865,22 @@
     if (who === 'kapitel') { drawKapitel(full); return; }
     var shown = full.substring(0, Math.floor(G.dialogChar));
 
-    // Hintergrund abdunkeln: der Text soll lesbar sein und man soll
-    // sofort sehen, dass das Spiel steht.
-    ctx.fillStyle = 'rgba(6,4,10,0.55)';
-    ctx.fillRect(0, 0, W, H);
-
     var bx = 16, by = H - 84, bw = W - 32, bh = 68;
+    if (global.Kino && global.Kino.imFilm(G)) {
+      // Im Kurzfilm (kino.js) bleibt das Bild hell, die Kamera zeigt den
+      // Redner. Nur unten wird es dunkler, damit der Hinweis lesbar bleibt.
+      var dg = ctx.createLinearGradient(0, by - 34, 0, H);
+      dg.addColorStop(0, 'rgba(6,4,10,0)');
+      dg.addColorStop(0.5, 'rgba(6,4,10,0.55)');
+      dg.addColorStop(1, 'rgba(6,4,10,0.75)');
+      ctx.fillStyle = dg;
+      ctx.fillRect(0, by - 34, W, H - by + 34);
+    } else {
+      // Hintergrund abdunkeln: der Text soll lesbar sein und man soll
+      // sofort sehen, dass das Spiel steht.
+      ctx.fillStyle = 'rgba(6,4,10,0.55)';
+      ctx.fillRect(0, 0, W, H);
+    }
     ctx.fillStyle = 'rgba(8,5,13,0.97)';
     ctx.fillRect(bx, by, bw, bh);
     ctx.strokeStyle = SPEAKER[who] ? SPEAKER[who].col : '#8f86a8';
@@ -4884,6 +4991,10 @@
     ctx.fillRect(0, H - 17, W, 17);
     F.draw(ctx, 'EIN SPIEL ÜBER HONIG, SCHLAF UND BRÜDERLICHE GEWALT',
            W / 2, H - 12, { color: '#c0b4d4', align: 'center' });
+    // Versionsnummer (laden.js): hilft bei Fehlerberichten
+    if (global.BALCI_VERSION) {
+      F.draw(ctx, 'V' + global.BALCI_VERSION, 4, H - 12, { color: '#6c6284' });
+    }
   }
 
   function drawTitleBoard() {
@@ -5012,7 +5123,7 @@
       ['RUNTER ODER LB IN DER LUFT', 'ARSCHBOMBE (BAUCH-STAMPFER)'],
       ['RUNTER BEIM LAUFEN', 'BAUCHRUTSCHER. DABEI SPRUNG = WEITSPRUNG'],
       ['X / RB / RT', 'RENNEN + KIPPE WERFEN'],
-      ['X / RB / RT (AIRSOFT)', 'BBS SCHIESSEN. HIT RUFEN: NIE.'],
+      ['X / RB / RT (AIRSOFT)', 'BBS SCHIESSEN. Y = NACHLADEN. HIT RUFEN: NIE.'],
       ['X (MIT WAFFE)', 'SCHLAGEN. RUNTER + SCHLAG IN DER LUFT = STICH'],
       ['START', 'PAUSE'],
       ['B', 'ZURÜCK (IN MENÜS)']
@@ -5024,7 +5135,7 @@
       ['S BEIM LAUFEN', 'BAUCHRUTSCHER. DABEI SPRUNG = WEITSPRUNG'],
       ['SHIFT / E', 'RENNEN + KIPPE WERFEN'],
       ['MAUSKLICK / E (WAFFE)', 'SCHLAGEN. S + SCHLAG IN DER LUFT = STICH'],
-      ['MAUSKLICK / E (AIRSOFT)', 'BBS SCHIESSEN. HIT RUFEN: NIE.'],
+      ['MAUSKLICK / E (AIRSOFT)', 'BBS SCHIESSEN. R = NACHLADEN. HIT RUFEN: NIE.'],
       ['ESC', 'PAUSE.   MENÜS: MIT DER MAUS ANKLICKEN'],
       ['M', 'TON AN / AUS']
     ];
@@ -5158,11 +5269,11 @@
     var l = G.lvl, sc = G.scene, h = null;
     if (!l) return null;
     if (sc && sc.type === 'schlaf') h = sc.phase === 'traum' ? 'SPRUNG = MIT DEM BAUCH FLATTERN. BROKKOLI AUSWEICHEN.' : 'SPRUNG = VORSPULEN.';
-    else if (sc && sc.type === 'shisha') h = 'SPRUNG HALTEN = ZIEHEN, IM GRÜNEN LOSLASSEN. SPRUNG = AUSPUSTEN IM FELD. ESAT ZIEHT: SPRUNG = RÜLPSEN.';
-    else if (sc && sc.type === 'kasse') h = 'LINKS / RUNTER / RECHTS = IN TÜTE 1 / 2 / 3. NIE SCHWERES AUF ZARTES. SHIFT / E = NICHT MEINS.';
+    else if (sc && sc.type === 'shisha') h = 'SPRUNG HALTEN = ZIEHEN, IN DER ZONE LOSLASSEN. JEDE ZONE = EIN RING. ESAT IN SEINER ZONE: RUNTER = RÜLPSEN.';
+    else if (sc && sc.type === 'kasse') h = 'A / S / D = SCHWER / KÜHL / ZART. W = OMAS SACHEN ZURÜCK.';
     else if (sc && sc.type === 'mahl' && sc.kind === 'taverne') h = 'OMA LEGT VOR, DU ISST NACH: SPRUNG = BEISSEN, RUNTER = TUNKEN. IM SELBEN RHYTHMUS.';
     else if (sc && sc.type === 'mahl' && sc.kind === 'galata') h = 'SPRUNG HALTEN = AUSHOLEN UND DRILLEN. SPRUNG = ANHAUEN. LINKS / RECHTS = MÖWEN.';
-    else if (sc && sc.type === 'mahl') h = 'SPRUNG = BEISSEN, IM TAKT DES RINGS. RUNTER = AYRAN. NICHT MIT VOLLEM MUND!';
+    else if (sc && sc.type === 'mahl') h = 'SPRUNG = ABBEISSEN, SO SCHNELL DU KANNST. EXTRA SCHARF? RUNTER = AYRAN.';
     else if (l.eat) h = 'ESSEN MIT DER MAUS ZU YUSUF ZIEHEN. ODER PFEILE + SPRUNG.';
     else if (l.mode === 'fussball') h = 'SHIFT / E = SCHUSS. REINSPRINGEN = KOPFBALL. STAMPFER = BAUCHSCHUSS.';
     else if (l.mode === 'rennen') h = 'PFEILE = LENKEN. SPRUNG = NITRO. RUNTER = BREMSEN.';
@@ -5170,13 +5281,13 @@
     else if (l.mode === 'downhill') h = 'SHIFT = TRETEN. SPRUNG = HOPSEN, IN DER LUFT SALTO. RUNTER IN DER LUFT = BARSPIN. W = KLINGEL.';
     else if (l.mode === 'doener') h = 'PFEILE + SPRUNG = BELEGEN. RUNTER = WICKELN UND ESSEN.';
     else if (l.mode === 'pizza') h = 'PFEILE + SPRUNG = BELEGEN. RUNTER = OFEN. SPRUNG = RAUSHOLEN.';
-    else if (l.mode === 'flug') h = 'SPRUNG = STEIGEN. RUNTER = SINKEN. LINKS / RECHTS = TEMPO.';
+    else if (l.mode === 'flug') h = 'W = STEIGEN. S = SINKEN. A / D = TEMPO.';
     else if (l.jagd) h = 'LAUF! WER STEHEN BLEIBT, WIRD VON DER SECURITY EINGEHOLT.';
     else if (l.bossType === 'felix') h = 'BEKIFFT MACHT DER BAUCH-STAMPFER VOLLEN SCHADEN.';
     else if (l.bossType === 'semih') h = 'AUF DEN TERLIK SPRINGEN = KONTER. LIEGT ER, STECKT ER ODER TELEFONIERT ER: DRAUF!';
     else if (l.bossType === 'semih2') h = 'DEIN STAMPFER MACHT VOLLEN SCHADEN. KRAFTPROBE: SPRUNG SO SCHNELL DU KANNST.';
     else if (l.bike) h = 'RECHTS = TRETEN, LINKS = BREMSEN. IN DER LUFT SPRUNG = SALTO.';
-    else if (l.airsoft) h = 'SHIFT / E = BBS. HALTEN = DAUERFEUER. NACHLADEN GEHT VON ALLEIN.';
+    else if (l.airsoft) h = 'SHIFT / E = BBS. HALTEN = DAUERFEUER. R = NACHLADEN (30 PRO MAGAZIN).';
     else if (l.punch) h = 'SHIFT / E = FAUST. HAUT AUCH KISTEN KAPUTT.';
     else if (G.player && G.player.waffe && !l.mode) h = 'SHIFT / E = SCHLAGEN, DREIMAL = KOMBO. IN DER LUFT RUNTER + SCHLAG = STICH.';
     else if (!l.mode) h = 'BEIM LAUFEN RUNTER = BAUCHRUTSCHER. DABEI SPRUNG = WEITSPRUNG.';
@@ -5510,24 +5621,71 @@
   var STEP = 1000 / 60;
   var acc = 0, last = performance.now();
 
+  /* ---------- Fehler mitten im Spiel ----------
+     Frueher hielt ein einziger Programmfehler die Schleife fuer immer an:
+     das Bild fror ein, nichts ging mehr. Jetzt laeuft sie weiter. Kommt
+     derselbe Fehler Bild fuer Bild wieder, geht es zurueck aufs Titelbild
+     (der Spielstand ist nach jedem Level gespeichert). Der Fehler landet
+     trotzdem in der Konsole und bei window.onerror (die Tests zaehlen ihn),
+     und der letzte steht unter 'balci_fehler' fuer Fehlerberichte. */
+  var fehler = { folge: 0, gemeldet: 0, gerettet: 0 };
+  function notfallTitel() {
+    G.timers = [];
+    G.fade = 0; G.fadeDir = 0; G.fadeCb = null; G.frozen = false;
+    G.mini = null; G.miniWeiter = null; G.filmKamera = null;
+    try { loadLevel(0, false); } catch (e) {}
+    G.state = 'title'; G.menuIdx = 0; G.banner = 0;
+    try { S.music('menu'); } catch (e) {}
+    if (G.toasts) {
+      G.toasts.push({ art: 'text', zeile1: 'HOPPLA, DA GING WAS SCHIEF', zeile2: 'DEIN SPIELSTAND IST SICHER.',
+                      col: '#ffd257', zeit: 260 });
+    }
+  }
+  function spielfehler(e) {
+    acc = 0;
+    fehler.folge++;
+    if (fehler.gemeldet < 5) {
+      fehler.gemeldet++;
+      try {
+        var text = String(e && e.stack || e).slice(0, 1500);
+        global.Speicher.set('balci_fehler', JSON.stringify({
+          zeit: new Date().toISOString(), zustand: G.state, level: G.lvlIndex, text: text
+        }));
+      } catch (e2) {}
+      setTimeout(function () { throw e; }, 0);
+    }
+    if (fehler.folge >= 3 && fehler.gerettet < 3) {
+      fehler.gerettet++;
+      fehler.folge = 0;
+      notfallTitel();
+    }
+  }
+
   function frame(now) {
+    // Zuerst das naechste Bild bestellen: so steht die Schleife nie still
+    requestAnimationFrame(frame);
     var dt = now - last;
     last = now;
-    // Ruckelt es dauerhaft, schaltet GRAFIK: AUTOMATISCH herunter (licht.js)
-    if (LI && LI.messen(dt)) resize();
-    if (dt > 250) dt = STEP;     // nach Tab-Wechsel nicht aufholen
-    acc += dt;
-    var guard = 0;
-    // Bis zu acht Schritte pro Bild: auch bei 8 Bildern pro Sekunde laeuft
-    // das Spiel noch in Echtzeit (frueher fuenf: unter 12 Bildern Zeitlupe).
-    while (acc >= STEP && guard++ < 8) { update(); acc -= STEP; }
-    // Mehr holt das Spiel nicht nach. Den Rest verwerfen — sonst lief es
-    // nach einem Ruckler sekundenlang im Zeitraffer.
-    if (acc >= STEP) acc = 0;
-    render();
-    requestAnimationFrame(frame);
+    try {
+      // Ruckelt es dauerhaft, schaltet GRAFIK: AUTOMATISCH herunter (licht.js)
+      if (LI && LI.messen(dt)) resize();
+      if (dt > 250) dt = STEP;     // nach Tab-Wechsel nicht aufholen
+      acc += dt;
+      var guard = 0;
+      // Bis zu acht Schritte pro Bild: auch bei 8 Bildern pro Sekunde laeuft
+      // das Spiel noch in Echtzeit (frueher fuenf: unter 12 Bildern Zeitlupe).
+      while (acc >= STEP && guard++ < 8) { update(); acc -= STEP; }
+      // Mehr holt das Spiel nicht nach. Den Rest verwerfen — sonst lief es
+      // nach einem Ruckler sekundenlang im Zeitraffer.
+      if (acc >= STEP) acc = 0;
+      render();
+      fehler.folge = 0;
+    } catch (e) {
+      spielfehler(e);
+    }
   }
   requestAnimationFrame(frame);
+  G._notfallTitel = notfallTitel;   // fuer den Randfalltest
 
   // Musik erst nach der ersten Eingabe (Browser-Regel)
   function firstGesture() {

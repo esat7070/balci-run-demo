@@ -9,8 +9,11 @@
      faehrt nur mit W, auf Space springt man"). gas = W / Pfeil hoch / RT,
      hopp = die echte Sprungtaste (Leertaste, A) — damit W nicht nebenbei
      springt —, nitro = Shift / X / RB. */
+  // n1-n3: die Zahlentasten (Nils' Quiz, Esat 26.10.: "mit Zahlen 1-3 antworten"),
+  // laden: R = nachladen beim Airsoft
   var ACTIONS = ['left', 'right', 'up', 'down', 'jump', 'run', 'throw',
-                 'pause', 'mute', 'confirm', 'back', 'puff', 'gas', 'hopp', 'nitro', 'stampf', 'dev'];
+                 'pause', 'mute', 'confirm', 'back', 'puff', 'gas', 'hopp', 'nitro', 'stampf', 'dev',
+                 'n1', 'n2', 'n3', 'laden'];
 
   var KEYMAP = {
     'ArrowLeft': ['left'], 'KeyA': ['left'],
@@ -28,6 +31,9 @@
     'Escape': ['pause', 'back'],
     'KeyP': ['pause'],
     'KeyM': ['mute'],
+    'Digit1': ['n1'], 'Digit2': ['n2'], 'Digit3': ['n3'],
+    'Numpad1': ['n1'], 'Numpad2': ['n2'], 'Numpad3': ['n3'],
+    'KeyR': ['laden'],
     'KeyC': ['puff', 'stampf'],        // Arschbombe (und an der Shisha auspusten)
     'ControlLeft': ['stampf'], 'ControlRight': ['stampf'],
     'Backspace': ['back']
@@ -337,6 +343,7 @@
         hopp: btn(p, 0) || btn(p, 1),
         nitro: btn(p, 2) || btn(p, 5),
         pause: btn(p, 9),
+        laden: btn(p, 3),            // Y = nachladen (Airsoft)
         confirm: btn(p, 0) || btn(p, 9),
         back: btn(p, 1) || btn(p, 8)
       };
