@@ -216,7 +216,11 @@
       '#rotate p': 'DREH DEIN HANDY QUER',
       '#rotate small': 'Balci Run läuft im Querformat',
       '#startbtn': 'TIPPEN ZUM STARTEN',
-      '#fshint': 'startet im Vollbild'
+      '#fshint': 'startet im Vollbild',
+      '#codeform label': 'CODE VON DEINEM FREUND',
+      '#codeform small': 'Er steht bei ihm unter ZU ZWEIT → ONLINE SPIELEN → FREUND EINLADEN',
+      '#cfok': 'VERBINDEN',
+      '#cfzurueck': 'ZURÜCK'
     },
     en: {
       title: 'Balci Run – Yusuf\'s Honey Hunt',
@@ -226,7 +230,11 @@
       '#rotate p': 'TURN YOUR PHONE SIDEWAYS',
       '#rotate small': 'Balci Run plays in landscape',
       '#startbtn': 'TAP TO START',
-      '#fshint': 'starts in fullscreen'
+      '#fshint': 'starts in fullscreen',
+      '#codeform label': 'CODE FROM YOUR FRIEND',
+      '#codeform small': 'They find it under TWO PLAYERS → PLAY ONLINE → INVITE A FRIEND',
+      '#cfok': 'CONNECT',
+      '#cfzurueck': 'BACK'
     }
   };
 

@@ -196,6 +196,38 @@ body.inmenu .pad-left,body.inmenu .pad-right{display:none}
 }
 #nfok:disabled{opacity:.5}
 
+/* ---- Code fuer Online zu zweit (wie die Namenseingabe, nur kuerzer) ---- */
+#codeform{
+  position:absolute;inset:0;z-index:30;
+  display:flex;align-items:center;justify-content:center;
+  pointer-events:none;
+  line-height:1.3;
+}
+#cfcode{
+  -webkit-user-select:text;user-select:text;
+  touch-action:manipulation;
+  width:min(180px, 60vw);
+  font:800 30px/1 ui-monospace,Menlo,Consolas,monospace;
+  letter-spacing:.3em;text-transform:uppercase;text-align:center;
+  color:#fff;background:#1c1428;
+  border:2px solid #6a5f80;border-radius:8px;
+  padding:10px 12px;
+  outline:none;
+}
+#cfcode:focus{border-color:#6fc8e8}
+#cfok,#cfzurueck{
+  -webkit-appearance:none;appearance:none;
+  font:800 16px/1 system-ui,sans-serif;letter-spacing:.06em;
+  border:0;border-radius:10px;
+  padding:12px 26px;
+  touch-action:manipulation;
+}
+#cfok{color:#08202a;background:#6fc8e8;box-shadow:0 4px 0 #2f7f9c}
+#cfzurueck{color:#d8cfe8;background:transparent;padding:6px 16px}
+@media (pointer:coarse){
+  #codeform{position:fixed;align-items:flex-start;padding-top:6px}
+}
+
 /* Handy: Feld am ganzen Bildschirm ausrichten und beim Tippen nach oben,
    damit die Tastatur es nicht verdeckt */
 @media (pointer:coarse){

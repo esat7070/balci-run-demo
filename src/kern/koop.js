@@ -24,6 +24,8 @@
    Steuerung (input.js): ohne Controller teilen sich beide die Tastatur,
    Spieler 1 links (A D, Leertaste, Shift, Strg), Spieler 2 rechts (Pfeile,
    dazu , . -). Ein Controller gehoert Spieler 2, zwei: jeder einen.
+   Online (netz.js) sitzt Spieler 2 an seinem eigenen Geraet: seine Tasten
+   kommen ueber die Verbindung, alles hier gehoert Spieler 1.
 
    Wie es eingehaengt ist: game.js ruft die Funktionen hier an wenigen
    Stellen auf (Level laden, jeder Tick, Kamera, Zeichnen, Tod). Waehrend
@@ -820,7 +822,8 @@
   function vsDraw(ctx, G, W, H) {
     var vs = K.vs;
     var Px = P(), echtChar = Px.drawChar;
-    halbeBilder(ctx, G, W, H, function (i, o) {
+    var unter = vs.ende ? (vs.mod.vsZielText || 'SPIELER {n} WAR ZUERST IM ZIEL.').replace('{n}', vs.ende.sieger) : '';
+    var allein = halbeBilder(ctx, G, W, H, function (i, o) {
       G.modus = vs.r[i]; G.player = i ? K.p2 : K.p1;
       G.particles = vs.teile[i]; G.floats = vs.floats[i];
       if (i === 1) tauscheFiguren(Px, echtChar);
@@ -829,10 +832,32 @@
         Px.drawChar = echtChar;
         G.modus = vs.r[0]; G.player = K.p1; G.particles = vs.teile[0]; G.floats = vs.floats[0];
       }
+    }, function (o, i) {
+      vsEcke(o, G, W, H, i);
+      if (vs.ende) vsSieger(o, G, W, H, vs.ende, unter);
     });
+    if (allein) return;
     var bw = W / 2, bh = H / 2, bx = (W - bw) / 2;
     for (var i = 0; i < 2; i++) vsTafel(ctx, G, W, i * bh, bh, bx, i);
-    if (vs.ende) vsSieger(ctx, G, W, H, vs.ende, (vs.mod.vsZielText || 'SPIELER {n} WAR ZUERST IM ZIEL.').replace('{n}', vs.ende.sieger));
+    if (vs.ende) vsSieger(ctx, G, W, H, vs.ende, unter);
+  }
+
+  /** Online jeder sein Bild: oben in der Mitte, wer vorne liegt und wo der andere ist. */
+  function vsEcke(ctx, G, W, H, i) {
+    var vs = K.vs, info = vs.mod.vsInfo(vs.r[i]), anders = vs.mod.vsInfo(vs.r[1 - i]);
+    var platz = vsPlatz(vs, i), col = i ? K.figur.col : P1_FARBE, aCol = i ? P1_FARBE : K.figur.col;
+    var aName = i ? 'YUSUF' : K.figur.name, bw = 168, x = Math.round(W / 2 - bw / 2), y = 3;
+    ctx.globalAlpha = 0.8;
+    rect(ctx, x, y, bw, 25, '#08050c');
+    ctx.globalAlpha = 1;
+    rect(ctx, x, y, bw, 1, col);
+    F().draw(ctx, platz ? platz + '.' : '=', x + 14, y + 6, { color: platz === 1 ? '#ffd257' : '#c8c0d8', align: 'center', scale: 2, shadow: true });
+    F().draw(ctx, 'GEGEN ' + aName, x + 30, y + 4, { color: aCol });
+    var sx = x + 30, sw = bw - 40, sy = y + 16;
+    rect(ctx, sx, sy, sw, 3, '#241830');
+    rect(ctx, sx + sw * Math.min(1, anders.anteil) - 1, sy - 2, 3, 7, aCol);
+    rect(ctx, sx + sw * Math.min(1, info.anteil) - 1, sy - 3, 3, 9, '#ffffff');
+    rect(ctx, sx + sw - 1, sy - 3, 2, 9, '#ffd257');
   }
 
   /** Die Anzeigen neben einem Bild: links wer, Platz; rechts Tempo, Nitro, Strecke. */
@@ -976,7 +1001,8 @@
   function szeneDraw(ctx, G, W, H, mod) {
     var v = K.vsSz;
     var Px = P(), echtChar = Px.drawChar;
-    halbeBilder(ctx, G, W, H, function (i, o) {
+    var unter = v.ende ? 'MEHR PUNKTE: ' + Math.max(v.ende.a, v.ende.b) + ' ZU ' + Math.min(v.ende.a, v.ende.b) : '';
+    var allein = halbeBilder(ctx, G, W, H, function (i, o) {
       G.scene = v.k[i]; G.player = i ? K.p2 : K.p1;
       G.particles = v.teile[i]; G.floats = v.floats[i];
       if (i === 1) tauscheFiguren(Px, echtChar);
@@ -985,12 +1011,32 @@
         Px.drawChar = echtChar;
         G.scene = v.k[0]; G.player = K.p1; G.particles = v.teile[0]; G.floats = v.floats[0];
       }
+    }, function (o, i) {
+      szEcke(o, G, W, H, i);
+      if (v.ende) vsSieger(o, G, W, H, v.ende, unter);
     });
+    if (allein) return;
     var bw = W / 2, bh = H / 2, bx = (W - bw) / 2;
     for (var i = 0; i < 2; i++) szTafel(ctx, G, W, i * bh, bh, bx, i);
-    if (v.ende) {
-      vsSieger(ctx, G, W, H, v.ende, 'MEHR PUNKTE: ' + Math.max(v.ende.a, v.ende.b) + ' ZU ' + Math.min(v.ende.a, v.ende.b));
-    }
+    if (v.ende) vsSieger(ctx, G, W, H, v.ende, unter);
+  }
+
+  /** Online jeder sein Bild: oben in der Mitte der Punktestand gegen den anderen. */
+  function szEcke(ctx, G, W, H, i) {
+    var v = K.vsSz, a = szPunkte(v.k[i]), b = szPunkte(v.k[1 - i]);
+    var col = i ? K.figur.col : P1_FARBE, aCol = i ? P1_FARBE : K.figur.col;
+    var name = i ? K.figur.name : 'YUSUF', aName = i ? 'YUSUF' : K.figur.name;
+    var bw = 200, x = Math.round(W / 2 - bw / 2), y = 3;
+    ctx.globalAlpha = 0.8;
+    rect(ctx, x, y, bw, 22, '#08050c');
+    ctx.globalAlpha = 1;
+    rect(ctx, x, y, bw, 1, col);
+    F().draw(ctx, name, W / 2 - 8, y + 4, { color: col, align: 'right' });
+    F().draw(ctx, aName, W / 2 + 8, y + 4, { color: aCol });
+    F().draw(ctx, Gfmt(a), W / 2 - 8, y + 13, { color: a >= b ? '#ffe9a8' : '#c8c0d8', align: 'right' });
+    F().draw(ctx, ':', W / 2, y + 13, { color: '#a89cc0', align: 'center' });
+    F().draw(ctx, Gfmt(b), W / 2 + 8, y + 13, { color: b > a ? '#ffe9a8' : '#c8c0d8' });
+    if (v.k[i].vsFertig && !v.ende) F().draw(ctx, 'FERTIG', x + bw - 4, y + 8, { color: '#8cd85a', align: 'right' });
   }
 
   function szTafel(ctx, G, W, y0, bh, bx, i) {
@@ -1020,8 +1066,11 @@
   }
 
   /** Zwei Bilder (je ganz normal gezeichnet) halb so gross uebereinander.
-      malen(i, ctx) zeichnet das Bild von Spieler i+1 in eine eigene Leinwand. */
-  function halbeBilder(ctx, G, W, H, malen) {
+      malen(i, ctx) zeichnet das Bild von Spieler i+1 in eine eigene Leinwand.
+      Online (netz.js) bekommt jeder sein Bild ganz: der Gastgeber hier, der
+      Freund ueber die Verbindung; ecke(ctx, i) malt die kleine Anzeige
+      darueber. Rueckgabe true = so gemacht (dann keine Tafeln daneben). */
+  function halbeBilder(ctx, G, W, H, malen, ecke) {
     var haupt = G._canvas, rs = haupt.width / W, i;
     for (i = 0; i < 2; i++) {
       var c = vsBild[i] || (vsBild[i] = document.createElement('canvas'));
@@ -1035,6 +1084,17 @@
       G._canvas = c;
       try { malen(i, o); } finally { G._canvas = haupt; }
     }
+    var N = global.Netz;
+    if (ecke && N && N.eigeneBilder && N.eigeneBilder()) {
+      ctx.save();
+      ctx.setTransform(1, 0, 0, 1, 0, 0);
+      ctx.globalAlpha = 1;
+      ctx.drawImage(vsBild[0], 0, 0);
+      ctx.restore();
+      ecke(ctx, 0);
+      N.gastBild(vsBild[1], function (o) { ecke(o, 1); });
+      return true;
+    }
     var bw = W / 2, bh = H / 2, bx = (W - bw) / 2;
     rect(ctx, 0, 0, W, H, '#07050b');
     ctx.save();
@@ -1044,6 +1104,7 @@
     ctx.restore();
     rect(ctx, 0, bh - 1, W, 2, '#08050c');
     rect(ctx, bx, bh - 1, bw, 1, 'rgba(255,255,255,0.18)');
+    return false;
   }
 
   /** Das Shisha-Duell (shisha.js): Spieler 2 hat gewonnen bzw. verloren. */
@@ -1194,6 +1255,11 @@
     if (weiter >= 0) l.push({ k: 'continue', label: 'WEITER AB LEVEL ' + (weiter + 1) });
     l.push({ k: 'play', label: 'NEUES SPIEL' });
     l.push({ k: 'select', label: 'LEVEL WÄHLEN' });
+    if (global.Netz) {
+      var st = global.Netz.stand();
+      l.push({ k: 'online', label: st.rolle === 'host' ? (st.status === 'da' ? 'ONLINE: VERBUNDEN' : roh('ONLINE: CODE ' + st.code))
+                                                       : 'ONLINE SPIELEN' });
+    }
     l.push({ k: 'zurueck', label: 'ZURÜCK' });
     return l;
   }
@@ -1203,7 +1269,10 @@
     K.menuIdx = 0;
   }
 
-  function menueRect(i, n) { return { x: 512 / 2 - 80, y: 214 + i * 13 - 3 - (n > 3 ? 6 : 0), w: 160, h: 13 }; }
+  function menueRect(i, n) { return { x: 512 / 2 - 80, y: 214 + i * 13 - 3 - (n > 3 ? 6 : 0) - (n > 4 ? 10 : 0), w: 160, h: 13 }; }
+
+  /** Codes und zusammengesetzte Namen nicht uebersetzen (sprache.js). */
+  function roh(s) { if (global.Sprache && global.Sprache.schonUebersetzt) global.Sprache.schonUebersetzt(s); return s; }
 
   function waehlen(G, d) {
     K.wahl = (K.wahl + d + FIGUREN.length) % FIGUREN.length;
@@ -1213,6 +1282,7 @@
   function aktivieren(G, it) {
     S().play('select');
     if (it.k === 'zurueck') { G.state = 'title'; return; }
+    if (it.k === 'online') { global.Netz.oeffnen(G); return; }
     ein(G);
     if (G.koopLos) G.koopLos(it.k);
   }
@@ -1252,6 +1322,15 @@
     var tasten1 = ['A D = LAUFEN', 'LEERTASTE = SPRINGEN', 'SHIFT = SCHLAGEN', 'STRG = ARSCHBOMBE'];
     var tasten2 = ['PFEILE = LAUFEN', 'PFEIL HOCH = SPRINGEN', '. = SCHLAGEN', ', = ARSCHBOMBE'];
     var pad = ['STICK = LAUFEN', 'A = SPRINGEN', 'X = SCHLAGEN', 'LB = ARSCHBOMBE'];
+    var st = global.Netz ? global.Netz.stand() : null;
+    if (st && st.rolle === 'host') {
+      // Online: hier gehoert alles Spieler 1, Spieler 2 sitzt am anderen Geraet
+      var hier = pads ? ['TASTATUR ODER CONTROLLER'].concat(pad)
+                      : ['TASTATUR', 'PFEILE ODER A D = LAUFEN', 'LEERTASTE = SPRINGEN', 'SHIFT = SCHLAGEN', 'STRG = ARSCHBOMBE'];
+      var dort = st.status === 'da' ? ['ONLINE', 'VERBUNDEN', st.ping ? st.ping + ' MS' : '', 'ER STEUERT AN SEINEM GERÄT']
+                                    : ['ONLINE', roh('CODE ' + st.code), 'WARTE AUF DEINEN FREUND'];
+      return [hier, dort];
+    }
     if (pads >= 2) return [['CONTROLLER 1'].concat(pad), ['CONTROLLER 2'].concat(pad)];
     if (pads === 1) return [['TASTATUR', 'PFEILE ODER A D = LAUFEN', 'LEERTASTE = SPRINGEN', 'SHIFT = SCHLAGEN', 'STRG = ARSCHBOMBE'],
                             ['CONTROLLER'].concat(pad)];

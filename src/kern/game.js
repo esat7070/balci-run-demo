@@ -1195,6 +1195,8 @@
   function update() {
     G.tick++;
     global.Input.poll();
+    // Online zu zweit (netz.js): duerfen die Tasten des Freundes gerade Menues bedienen?
+    if (global.Netz) global.Netz.tick(G);
     // Zu zweit: in Fahr-Leveln und Minispielen steuert, wer dran ist (koop.js)
     if (global.Koop) global.Koop.fokusTick(G);
     updateFade();
@@ -1219,6 +1221,9 @@
     switch (G.state) {
       case 'title': updateTitle(); break;
       case 'koop': global.Koop.menuUpdate(G); break;
+      // Online zu zweit: Einladen / Code eingeben, und beim Freund das Bild vom Gastgeber
+      case 'online': global.Netz.menuUpdate(G); break;
+      case 'netz': global.Netz.gastUpdate(G); break;
       case 'select': updateSelect(); break;
       case 'howto': updateHowto(); break;
       case 'dialog': updateDialog(); updateWorld(); break;
@@ -2481,6 +2486,8 @@
 
     if (G.state === 'title') { drawTitle(); }
     else if (G.state === 'koop') { drawTitle(); global.Koop.menuDraw(ctx, G, W, H); }
+    else if (G.state === 'online') { drawTitle(); global.Netz.menuDraw(ctx, G, W, H); }
+    else if (G.state === 'netz') { global.Netz.gastDraw(ctx, G, W, H, canvas); }
     else if (G.state === 'select') { drawSelect(); }
     else if (G.state === 'howto') { drawHowto(); }
     else if (G.state === 'ending') { drawEnding(); }
@@ -5742,6 +5749,8 @@
   loadLevel(0, false);
   G.state = 'title';
   G.banner = 0;
+  // Link mit ?online=CODE: gleich beim Freund einsteigen
+  if (global.Netz) global.Netz.start(G);
 
   var STEP = 1000 / 60;
   var acc = 0, last = performance.now();
@@ -5804,6 +5813,8 @@
       // nach einem Ruckler sekundenlang im Zeitraffer.
       if (acc >= STEP) acc = 0;
       render();
+      // Online: das Bild fuer den Freund (netz.js)
+      if (global.Netz) global.Netz.nachRender(G, canvas);
       fehler.folge = 0;
     } catch (e) {
       spielfehler(e);

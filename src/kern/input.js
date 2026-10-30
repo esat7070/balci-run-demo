@@ -104,7 +104,8 @@
   });
 
   function recompute(a) {
-    var v = kbCount[a] > 0 || touchCount[a] > 0 || padOn[a] || tapOn[a] > 0 || (a === 'throw' && mausAn);
+    var v = kbCount[a] > 0 || touchCount[a] > 0 || padOn[a] || tapOn[a] > 0 || (a === 'throw' && mausAn) ||
+            (netzMenue && netzWert(a));
     if (v && !held[a]) { pressed[a] = true; anyPressed = true; }
     if (!v && held[a]) released[a] = true;
     held[a] = v;
@@ -140,6 +141,15 @@
   var FOKUS = { left: 1, right: 1, up: 1, down: 1, jump: 1, run: 1, throw: 1, puff: 1,
                 gas: 1, hopp: 1, nitro: 1, stampf: 1, laden: 1, confirm: 1 };
   var kbP = { 1: {}, 2: {} }, padP = { 1: {}, 2: {} };
+
+  /* Online (netz.js): Spieler 2 sitzt an einem anderen Geraet, seine Tasten
+     kommen ueber die Verbindung (wie ein Controller). Die ganze Tastatur und
+     alle Controller hier gehoeren dann Spieler 1. netzMenue: ob seine Tasten
+     gerade auch Menues und Dialoge bedienen (netz.js stellt das je Zustand).
+     Ein kurzer Tipper (gedrueckt und losgelassen zwischen zwei Nachrichten)
+     haelt die Aktion zwei Ticks lang (netzPuls), damit er nicht verloren geht. */
+  var netzAn = false, netzMenue = false, netzOn = {}, netzPuls = {};
+  function netzWert(a) { return netzAn && (!!netzOn[a] || netzPuls[a] > 0); }
   var heldP = { 1: {}, 2: {} }, pressedP = { 1: {}, 2: {} }, releasedP = { 1: {}, 2: {} };
   var keysDownP = {};     // Taste -> [[spieler, aktionen], ...] (so wie beim Druecken verteilt)
   var koopAn = false, padsDa = 0, fokusN = null;
@@ -153,7 +163,8 @@
 
   function recomputeP(n, a) {
     var v = kbP[n][a] > 0 || padP[n][a] ||
-            (n === 1 && (touchCount[a] > 0 || tapOn[a] > 0 || (a === 'throw' && mausAn)));
+            (n === 1 && (touchCount[a] > 0 || tapOn[a] > 0 || (a === 'throw' && mausAn))) ||
+            (n === 2 && netzWert(a));
     if (v && !heldP[n][a]) pressedP[n][a] = true;
     if (!v && heldP[n][a]) releasedP[n][a] = true;
     heldP[n][a] = v;
@@ -162,7 +173,7 @@
   /** Wem eine Taste gehoert: [[spieler, aktionen], ...]. Allein (oder wenn
       Spieler 2 einen Controller hat) gehoert die ganze Tastatur Spieler 1. */
   function verteilung(code) {
-    if (!koopAn || padsDa >= 1) return KEYMAP[code] ? [[1, KEYMAP[code]]] : [];
+    if (!koopAn || padsDa >= 1 || netzAn) return KEYMAP[code] ? [[1, KEYMAP[code]]] : [];
     var out = [];
     if (KOOP_TASTEN[1][code]) out.push([1, KOOP_TASTEN[1][code]]);
     if (KOOP_TASTEN[2][code]) out.push([2, KOOP_TASTEN[2][code]]);
@@ -414,6 +425,12 @@
   /* Alle angeschlossenen Controller. Gemeinsam (Menues, allein spielen)
      zaehlt jeder; zu zweit gehoert einer Spieler 2, bei zweien jedem einer. */
   function pollPad() {
+    // Online: kurze Tipper des Freundes laufen ab
+    if (netzAn) {
+      for (var na in netzPuls) {
+        if (netzPuls[na] > 0 && --netzPuls[na] === 0) { recompute(na); recomputeP(2, na); }
+      }
+    }
     var liste = [];
     if (navigator.getGamepads) {
       var pads = navigator.getGamepads();
@@ -427,7 +444,7 @@
       if (v !== padOn[a]) { padOn[a] = v; recompute(a); if (v) quelle = 'pad'; }
     });
     var zu = { 1: null, 2: null };
-    if (!koopAn) zu[1] = st;
+    if (!koopAn || netzAn) zu[1] = st;
     else if (staende.length >= 2) { zu[1] = staende[0]; zu[2] = staende[1]; }
     else if (staende.length === 1) zu[2] = staende[0];
     [1, 2].forEach(function (n) {
@@ -528,7 +545,35 @@
     /** Steuerung von Spieler n (1 oder 2): nur seine Tasten und sein Controller. */
     spieler: function (n) { return STEUER[n === 2 ? 2 : 1]; },
     /** Teilen sich beide gerade die Tastatur (kein Controller da)? */
-    geteilt: function () { return koopAn && padsDa === 0; },
+    geteilt: function () { return koopAn && padsDa === 0 && !netzAn; },
+    /* ---- Online (netz.js) ---- */
+    /** Spieler 2 spielt online mit (an/aus). */
+    netz: function (an) {
+      an = !!an;
+      if (an === netzAn) return;
+      netzAn = an; netzOn = {}; netzPuls = {};
+      releaseKeyboard();
+      ACTIONS.forEach(function (a) { recompute(a); recomputeP(2, a); });
+    },
+    netzAn: function () { return netzAn; },
+    /** Duerfen die Tasten des Freundes gerade Menues und Dialoge bedienen? */
+    netzMenue: function (an) {
+      an = !!an;
+      if (an === netzMenue) return;
+      netzMenue = an;
+      ACTIONS.forEach(recompute);
+    },
+    /** Was der Freund gerade drueckt: gehalten {aktion: true}, kurz [aktion, ...]
+        (seit der letzten Nachricht gedrueckt, vielleicht schon wieder los). */
+    netzStand: function (gehalten, kurz) {
+      if (!netzAn) return;
+      var neu = {};
+      (kurz || []).forEach(function (a) { if (held[a] !== undefined) { netzPuls[a] = 2; neu[a] = true; } });
+      ACTIONS.forEach(function (a) {
+        var v = !!(gehalten && gehalten[a]);
+        if (v !== !!netzOn[a] || neu[a]) { netzOn[a] = v; recompute(a); recomputeP(2, a); }
+      });
+    },
     /** Wie viele Controller angeschlossen sind (beim letzten poll). */
     padZahl: function () { return padsDa; },
     /** Nur Spieler n steuert das Spiel (Fahr-Level, Minispiele); null = alle. */

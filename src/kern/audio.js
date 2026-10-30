@@ -7,6 +7,7 @@
   'use strict';
 
   var ctx = null, master = null, musicGain = null, sfxGain = null;
+  var netzZiel = null;   // Online (netz.js): der Ton fuer den Freund
   var noiseBuf = null;
   var waves = {};
   var ready = false;
@@ -1585,7 +1586,22 @@
       if (musicGain) musicGain.gain.value = MUSIK_BASIS * musikVol * daempf;
       if (sfxGain) sfxGain.gain.value = EFFEKT_BASIS * effektVol;
     },
-    toggleMute: function () { setMuted(!muted); return muted; }
+    toggleMute: function () { setMuted(!muted); return muted; },
+    /** Online (netz.js): Musik und Effekte als Tonspur fuer den Freund.
+        Abgezweigt vor dem Hauptregler — stellt der Gastgeber stumm, hoert
+        der Freund die Musik trotzdem (seine eigene Stummtaste gilt bei ihm). */
+    netzTon: function () {
+      if (!init() || !ctx.createMediaStreamDestination) return null;
+      if (!netzZiel) {
+        netzZiel = ctx.createMediaStreamDestination();
+        var g = ctx.createGain();
+        g.gain.value = 0.85;
+        musicGain.connect(g);
+        sfxGain.connect(g);
+        g.connect(netzZiel);
+      }
+      return netzZiel.stream;
+    }
   };
 
 })(window);

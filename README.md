@@ -15,6 +15,9 @@ Huseyin im Weg.
 - Kein Game Over: weiter geht es immer am letzten Checkpoint
 - **Tageslauf** (ab Level 2 im Hauptmenü): jeden Tag ein neues Level, für alle
   gleich — Bestzeit, Serie und ein Ergebnis zum Teilen mit der Gruppe
+- **Zu zweit:** an einem Gerät oder **online, jeder an seinem eigenen** —
+  ZU ZWEIT → ONLINE SPIELEN: einer lädt ein und bekommt einen Code, der andere
+  gibt ihn ein. Die beiden Geräte verbinden sich direkt (WebRTC).
 - Deutsch und Englisch (EINSTELLUNGEN → SPRACHE)
 
 ## Steuerung
