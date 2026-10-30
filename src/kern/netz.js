@@ -17,6 +17,11 @@
    - Rennen und Minispiele gegeneinander: online sieht jeder seine eigene
      Welt im ganzen Bild statt Splitscreen (koop.js halbeBilder -> gastBild).
 
+   Steam (steam/steam.js, preload.js): der Gastgeber bekommt zusaetzlich eine
+   Lobby fuer die Freundesliste — Freunde einladen (Overlay) oder dort "Spiel
+   beitreten" klicken. Beim Freund kommt dann nur der Code an, und es geht
+   weiter wie mit eingetipptem Code.
+
    Bricht die Verbindung ab, wartet der Gastgeber mit demselben Code weiter:
    der Freund kann wieder einsteigen. Bis dahin steht Spieler 2 still (die
    Leine aus koop.js zieht ihn mit).
@@ -63,6 +68,8 @@
     sende: null, sendeCtx: null, strom: null, gastBild: null, gastUeber: null,
     // Gast: das Bild vom Gastgeber
     video: null, tonGesperrt: false, h: 0, raus: false,
+    // Steam: Lobby fuer die Freundesliste (Gastgeber) bzw. ueber Steam eingeladen (Freund)
+    steamLobby: false, steamCode: null, steamGast: false,
     // Menue
     modus: 'start', idx: 0, tipp: '', fehler: '', G: null
   };
@@ -272,6 +279,8 @@
       try { N.video.pause(); N.video.srcObject = null; if (N.video.parentNode) N.video.parentNode.removeChild(N.video); } catch (e) {}
       N.video = null;
     }
+    if ((N.steamLobby || N.steamGast) && steam() && steam().steamLobbyWeg) steam().steamLobbyWeg();
+    N.steamLobby = false; N.steamCode = null; N.steamGast = false;
     N.rolle = null; N.status = 'aus'; N.code = ''; N.gegenueber = null; N.raus = false; N.tonGesperrt = false;
     N.gastBild = null; N.gastUeber = null;
   }
@@ -297,6 +306,7 @@
         if (s !== N.sig) return;
         N.sigVersuche = 0;
         if (N.status !== 'da') N.status = 'warten';
+        steamLobbyAuf();
       },
       fehler: function (grund) {
         if (s !== N.sig) return;
@@ -704,8 +714,12 @@
   function punkte() {
     if (N.modus === 'start') return [{ k: 'einladen', label: 'FREUND EINLADEN' }, { k: 'eingeben', label: 'CODE EINGEBEN' },
                                       { k: 'zurueck', label: 'ZURÜCK' }];
-    if (N.modus === 'host') return [{ k: 'zurueck', label: N.status === 'da' ? 'WEITER ZUM SPIEL' : 'ZURÜCK (CODE BLEIBT)' },
-                                     { k: 'beenden', label: 'ONLINE BEENDEN' }];
+    if (N.modus === 'host') {
+      var l = [{ k: 'zurueck', label: N.status === 'da' ? 'WEITER ZUM SPIEL' : 'ZURÜCK (CODE BLEIBT)' },
+               { k: 'beenden', label: 'ONLINE BEENDEN' }];
+      if (N.steamLobby && N.status !== 'da') l.unshift({ k: 'steam', label: 'STEAM-FREUNDE EINLADEN' });
+      return l;
+    }
     if (N.modus === 'gast') return [{ k: 'abbrechen', label: 'ABBRECHEN' }];
     if (N.modus === 'fehler') return [{ k: 'ok', label: 'OK' }];
     return [];
@@ -721,6 +735,7 @@
     else if (it.k === 'beenden') { beenden(false); N.modus = 'start'; N.idx = 0; }
     else if (it.k === 'abbrechen') { beenden(true); N.modus = 'start'; N.idx = 0; }
     else if (it.k === 'ok') { N.modus = 'start'; N.idx = 0; }
+    else if (it.k === 'steam' && steam() && steam().steamEinladen) steam().steamEinladen();
   }
 
   function menuUpdate(G) {
@@ -970,7 +985,8 @@
     F().draw(ctx, t, W / 2, y + 4, { color: col, align: 'center', scale: da ? 2 : 1, shadow: true });
     if (!da) {
       F().draw(ctx, 'DEIN FREUND WÄHLT: ZU ZWEIT > ONLINE SPIELEN > CODE EINGEBEN', W / 2, y + 20, { color: '#a89cc0', align: 'center' });
-      F().draw(ctx, 'DU KANNST SCHON LOSSPIELEN. ER KANN JEDERZEIT DAZUKOMMEN.', W / 2, y + 31, { color: '#8f86a8', align: 'center' });
+      F().draw(ctx, N.steamLobby ? 'ODER ÜBER STEAM: EINLADEN ODER IN DER FREUNDESLISTE SPIEL BEITRETEN.'
+                                 : 'DU KANNST SCHON LOSSPIELEN. ER KANN JEDERZEIT DAZUKOMMEN.', W / 2, y + 31, { color: '#8f86a8', align: 'center' });
     } else {
       F().draw(ctx, 'ER STEUERT SPIELER 2. IM MENÜ ZU ZWEIT SUCHT ER SICH SEINE FIGUR AUS.', W / 2, y + 24, { color: '#a89cc0', align: 'center' });
     }
@@ -1008,9 +1024,48 @@
 
   /* ---------------- Start ---------------- */
 
-  /** game.js beim Start: ?online=CODE in der Adresse = direkt beitreten. */
+  /* ---------------- Steam (Desktop-Huelle) ---------------- */
+
+  /** Die Steam-Bruecke aus preload.js — nur, wenn Steam wirklich laeuft. */
+  function steam() { var D = global.balciDesktop; return D && D.steam ? D : null; }
+
+  /** Gastgeber: der Code steht beim Vermittler -> dieselbe Nummer als Steam-Lobby. */
+  function steamLobbyAuf() {
+    var D = steam();
+    if (!D || !D.steamLobby || N.rolle !== 'host' || N.steamCode === N.code) return;
+    var code = N.code;
+    N.steamCode = code;
+    D.steamLobby(code, PROTO).then(function (ok) {
+      if (N.rolle === 'host' && N.code === code) N.steamLobby = !!ok;
+    }, function () {});
+  }
+
+  /** Freund: Einladung angenommen (oder "Spiel beitreten") -> mit dem Code rein,
+      egal wo im Spiel er gerade ist (gespeichert ist nach jedem Level). */
+  function steamEinladung(G, code) {
+    // Nur ein richtiger Code (vier erlaubte Zeichen, nichts abgeschnitten)
+    var c = saeubern(code);
+    if (typeof code !== 'string' || c !== code || c.length !== CODE_LAENGE) return;
+    if (N.rolle === 'host' && N.code === c) return;          // die eigene Lobby
+    if (N.rolle === 'gast' && N.code === c && N.status === 'da') return;
+    G.timers = [];
+    G.fade = 0; G.fadeDir = 0; G.frozen = false;
+    G.state = 'online';
+    if (S() && S().stopMusic) S().stopMusic();
+    // Die alte Lobby hat steam.js beim Beitreten schon verlassen — nicht nochmal
+    // "raus aus der Lobby" schicken, das traefe die neue
+    N.steamLobby = false; N.steamGast = false;
+    beitreten(G, c);
+    N.steamGast = true;
+    toast('EINLADUNG ÜBER STEAM', 'VERBINDE MIT ' + roh(c), '#6fc8e8');
+  }
+
+  /** game.js beim Start: ?online=CODE in der Adresse = direkt beitreten.
+      In der Steam-Version: Einladungen aus der Freundesliste annehmen. */
   function start(G) {
     N.G = G;
+    var D = steam();
+    if (D && D.beimSteamBeitreten) D.beimSteamBeitreten(function (code) { steamEinladung(G, code); });
     var m = null;
     try { m = /[?&]online=([A-Za-z0-9]{4})\b/.exec(global.location.search || ''); } catch (e) {}
     if (!m) return;
@@ -1035,6 +1090,7 @@
     AKT: AKT, ZEICHEN: ZEICHEN,
     ICE: null,                 // Tests/Server: eigene STUN/TURN-Server
     _signalFabrik: null,       // Tests: Vermittler im Speicher statt WebSocket
+    _steamEinladung: steamEinladung,
     _N: N
   };
 

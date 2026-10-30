@@ -52,19 +52,50 @@
 
   var P1_FARBE = '#ffd257';
 
-  /* Wen Spieler 2 spielen kann (Figuren aus pixel.js mit allen Posen).
-     Die Farbe steht an seinen Herzen und ueber seinem Kopf. */
-  // (Die Demo zeigt nur die Jungs aus Level 1 bis 5, baue_demo.py schneidet den Rest heraus.)
+  /* Wen Spieler 2 spielen kann: alle Figuren aus pixel.js mit ganzem Koerper
+     (Esat, 30.10.: "Die Charakterauswahl soll alle sein, und witzig, mit Gags").
+     basis = wer es eigentlich ist (Huseyin mit Sixpack ist immer noch Huseyin:
+     er redet wie Huseyin und ist in Level 5 trotzdem der Boss).
+     spez, werte (Witz-Werte 0 bis 10), sprueche und yusuf (was Yusuf dazu sagt)
+     stehen auf der Karte im Menue ZU ZWEIT. Lennart und Erfan fehlen: die gibt
+     es nur als Bild, nicht mit Armen und Beinen zum Laufen.
+     (Die Demo zeigt nur die Jungs aus Level 1 bis 5, baue_demo.py schneidet den Rest heraus.) */
   var FIGUREN = [
-    { id: 'esat', name: 'ESAT', col: '#6fc8e8' },
-    { id: 'mirkan', name: 'MIRKAN', col: '#e8e4f4' },
-    { id: 'huseyin', name: 'HUSEYIN', col: '#ff9a5a' },
+    { id: 'esat', name: 'ESAT', col: '#6fc8e8',
+      spez: 'WAR SCHON LAUFEN. ZWÖLF KILOMETER. VOR DEM FRÜHSTÜCK.',
+      werte: [['KILOMETER', 10], ['KI-AGENTEN', 9], ['GEDULD MIT YUSUF', 2]],
+      sprueche: ['ICH WAR SCHON LAUFEN. UND DU?', 'MEINE KI HAT DAS LEVEL SCHON DURCHGESPIELT.', 'SHISHA IST BESTELLT. WIR KÖNNEN.'],
+      yusuf: 'DER WAR SCHON LAUFEN. MAN SIEHT ES IHM AN. ANGEBER.' },
+    { id: 'mirkan', name: 'MIRKAN', col: '#e8e4f4',
+      spez: 'FÄHRT WEISSES CABRIO. HAT FRAGEN. SEHR VIELE FRAGEN.',
+      werte: [['FRAGEN PRO MINUTE', 10], ['FELGEN', 9], ['ANTWORTEN', 1]],
+      sprueche: ['DARF ICH WAS FRAGEN?', 'WARUM HEISST HONIG EIGENTLICH HONIG?', 'ICH MACH NEUE FELGEN DRAUF.'],
+      yusuf: 'OKAY. ABER KEINE FRAGEN WÄHREND DES SPRINGENS.' },
+    { id: 'huseyin', name: 'HUSEYIN', col: '#ff9a5a',
+      spez: 'MACHT LIEGESTÜTZE. ZUR STRAFE. FÜR ANDERE.',
+      werte: [['LIEGESTÜTZE', 10], ['SALAT IM GEPÄCK', 9], ['LAUTSTÄRKE', 8]],
+      sprueche: ['DANEBEN? ZEHN LIEGESTÜTZE. FÜR DICH.', 'ICH HAB SALAT DABEI. NUR FÜR DEN NOTFALL.'],
+      yusuf: 'WEHE, DU WIRFST SALAT. WIR SIND IM SELBEN TEAM.' },
+    { id: 'huseyin_sixpack', basis: 'huseyin', name: 'SIXPACK-HUSEYIN', col: '#ffb47a',
+      spez: 'JACKE AUS. DAS SIXPACK BLENDET. WIRKLICH.',
+      werte: [['SIXPACK', 10], ['T-SHIRTS', 0], ['SONNENBRILLE NÖTIG', 10]],
+      sprueche: ['NICHT HINSCHAUEN. ZU SPÄT.', 'BURPEES? JETZT? IMMER.'],
+      yusuf: 'ZIEH DIR WAS AN. DU HAST EIN SIXPACK, ICH HAB EIN FAMILIENPACK.' },
+    { id: 'huseyin_muaythai', basis: 'huseyin', name: 'MUAY-THAI-HUSEYIN', col: '#ff6a4a',
+      spez: 'ERST DER WAI KRU, DANN DAS FLIEGENDE KNIE.',
+      werte: [['LOW KICKS', 10], ['STIRNBAND', 10], ['GNADE', 1]],
+      sprueche: ['ERST VERBEUGEN. DANN TUT ES WEH.', 'SPRING ÜBER DEN LOW KICK. ODER AUCH NICHT.'],
+      yusuf: 'BITTE NICHT DAS KNIE. ICH BIN EMPFINDLICH.' },
     
   ];
   // Welcher Boss welche Figur ist (dann springt fuer dieses Level ein anderer ein)
   var BOSS_FIGUR = { mirkan: 'mirkan', huseyin: 'huseyin',
                      
                    };
+  /** Wer eine Figur eigentlich ist (Sixpack-Huseyin -> huseyin). */
+  function basisVon(f) { return f ? (f.basis || f.id) : null; }
+  /** Wer im Dialog redet, wenn Spieler 2 etwas sagt (Gesicht und Name im Dialogfeld). */
+  function sprecherVon(f) { return basisVon(f); }
   // In diesen Szenen spielt man (dann ist einer dran); Chat, Hotel und Abspann schaut man nur
   var SPIEL_SZENEN = { kasse: 1, shisha: 1, mahl: 1, kontrolle: 1, schlaf: 1 };
 
@@ -81,7 +112,10 @@
     // Honig-Duell: gewonnene Level, Stand am Checkpoint, Ergebnis fuer den naechsten Dialog
     siege: { 1: 0, 2: 0 }, cp: null, duellOffen: null, fuehrtHonig: 0, fuehrtT: 0,
     // Rennen und Minispiele gegeneinander (Splitscreen): beide Welten, wer gewonnen hat
-    vs: null, vsSz: null
+    vs: null, vsSz: null,
+    // Menue: wann zuletzt gewaehlt (Witz-Werte wachsen, Sprueche wechseln), welcher Spruch;
+    // die Szene, wenn die eigene Figur heute der Boss ist
+    wahlT: 0, spruch: 0, ersatzWitz: null
   };
 
   /* ---------------- Ein und aus ---------------- */
@@ -120,7 +154,7 @@
     if (G.player && G.lvl && G.state !== 'title' && G.state !== 'select' && G.state !== 'koop') {
       neuerP2(G);
       K.figur = figurFuer(G, G.lvl);
-      K.p2.wer = K.figur.id;
+      K.p2.wer = K.figur.id; K.p2.basis = basisVon(K.figur);
       K.p2.maxHp = G.player.maxHp; K.p2.hp = K.p2.maxHp;
       K.p2.w = G.player.w; K.p2.h = G.player.h;
       K.p2.normalH = G.player.h; G.player.normalH = G.player.h;
@@ -144,24 +178,49 @@
   }
 
   /** Wer Spieler 2 in diesem Level ist: die Wunschfigur — es sei denn, sie
-      ist hier der Boss. Dann springt der Naechste aus der Liste ein. */
+      ist hier der Boss (Esat waehlt Esat, und Level 7 ist Esats Level). Dann
+      springt der Naechste aus der Liste ein, und vor dem Level gibt es dazu
+      eine kleine Szene (ersatzZeilen, kommt in den Intro-Dialog). */
   function figurFuer(G, lvl) {
     var f = FIGUREN[K.wahl] || FIGUREN[0];
     var boss = lvl && BOSS_FIGUR[lvl.bossType];
-    if (boss !== f.id) return f;
+    if (boss !== basisVon(f)) return f;
     for (var i = 1; i < FIGUREN.length; i++) {
       var e = FIGUREN[(K.wahl + i) % FIGUREN.length];
-      if (e.id !== boss) {
+      if (basisVon(e) !== boss) {
         var key = lvl.id;
-        if (!K.ersatzGesagt[key] && G.toasts) {
+        if (!K.ersatzGesagt[key]) {
           K.ersatzGesagt[key] = true;
-          G.toasts.push({ art: 'text', zeile1: f.name + ' IST HEUTE DER BOSS.',
-                          zeile2: 'SPIELER 2 SPIELT ' + e.name + '.', col: e.col, zeit: 200 });
+          K.ersatzWitz = { f: f, e: e };
         }
         return e;
       }
     }
     return f;
+  }
+
+  /* Die Szene, wenn die eigene Figur heute der Boss ist. Der Boss sagt was
+     dazu (DOPPELT), der Ersatz stellt sich vor, Yusuf hat eine Meinung. */
+  var DOPPELT = {
+    mirkan: 'ZWEI MIRKANS? WER STELLT DANN DIE FRAGEN? ICH? ODER ICH? DARF ICH DAS FRAGEN?',
+    huseyin: 'ICH GEGEN MICH? DANN MACH ICH JA DIE LIEGESTÜTZE FÜR MICH SELBST. NEIN.',
+    _: 'ZWEIMAL {f} IN EINEM LEVEL? DAS HÄLT DAS SPIEL NICHT AUS.',
+    
+  };
+  var ERSATZ = ['{e} HIER. ICH SPRING EIN. {f} HAT HEUTE SCHICHT ALS BOSS.',
+                'KEINE SORGE, YUSUF. ICH BIN WIE {f}. NUR AUF DEINER SEITE.',
+                'ICH HAB {f} VERSPROCHEN, DASS ICH IHN VERTRETE. UND DASS ICH IHN HAUE.'];
+  var ERSATZ_YUSUF = ['HAUPTSACHE, EINER HILFT MIR. DER ANDERE KRIEGT DEN BAUCH.',
+                      'ICH HAB AUFGEHÖRT, FRAGEN ZU STELLEN. DAS MACHT MIRKAN.',
+                      'GUT. DANN WEISS ICH WENIGSTENS, WEN ICH NICHT HAUEN DARF.'];
+  function ersatzZeilen(w) {
+    var f = w.f, e = w.e, boss = basisVon(f), fb = f;
+    for (var i = 0; i < FIGUREN.length; i++) if (FIGUREN[i].id === boss) fb = FIGUREN[i];
+    var tausch = function (t) { return t.replace('{f}', fb.name).replace('{e}', e.name); };
+    return [['karte', 'DOPPELGÄNGER-ALARM|' + fb.name + ' IST HEUTE DER BOSS|' + fb.col],
+            [boss, tausch(DOPPELT[boss] || DOPPELT._)],
+            [sprecherVon(e), tausch(rnd(ERSATZ))],
+            ['yusuf', rnd(ERSATZ_YUSUF)]];
   }
 
   /* ---------------- Level laden ---------------- */
@@ -178,7 +237,7 @@
     p1.eingabe = In().spieler(1);
     if (!respawn) K.ersatzGesagt = {};
     K.figur = figurFuer(G, lvl);
-    p2.wer = K.figur.id;
+    p2.wer = K.figur.id; p2.basis = basisVon(K.figur);
     p2.maxHp = p1.maxHp;
     p2.reset(p1.x, p1.y);
     p2.blase = null; p1.blase = null;
@@ -541,7 +600,7 @@
   /** Spielt Spieler 2 den Kumpel, der sonst hinter Yusuf herlaeuft? Dann
       wird der nicht noch einmal gezeichnet, und seine Saetze sagt Spieler 2. */
   function istKumpel(G) {
-    return !!(K.an && K.p2 && G.lvl && G.lvl.buddy && G.lvl.buddy === K.figur.id);
+    return !!(K.an && K.p2 && G.lvl && G.lvl.buddy && G.lvl.buddy === basisVon(K.figur));
   }
 
   /* ---------------- Wer ist dran (Fahr-Level, Minispiele) ---------------- */
@@ -642,13 +701,13 @@
     var z = [['karte', 'HONIG-DUELL|' + stand + '|' + (a > b ? P1_FARBE : (b > a ? f.col : '#ffffff'))]];
     if (a > b) {
       z.push(['yusuf', fuellen(rnd(DUELL.yusufGewinnt), a, b, f.name)]);
-      z.push([f.id, fuellen(rnd(DUELL.zweiterVerliert), b, a, 'YUSUF')]);
+      z.push([sprecherVon(f), fuellen(rnd(DUELL.zweiterVerliert), b, a, 'YUSUF')]);
     } else if (b > a) {
-      z.push([f.id, fuellen(rnd(DUELL.zweiterGewinnt), b, a, 'YUSUF')]);
+      z.push([sprecherVon(f), fuellen(rnd(DUELL.zweiterGewinnt), b, a, 'YUSUF')]);
       z.push(['yusuf', fuellen(rnd(DUELL.yusufVerliert), a, b, f.name)]);
     } else {
       z.push(['yusuf', fuellen(rnd(DUELL.gleich), a, b, f.name)]);
-      z.push([f.id, rnd(DUELL.gleichZweiter)]);
+      z.push([sprecherVon(f), rnd(DUELL.gleichZweiter)]);
     }
     return z;
   }
@@ -656,6 +715,15 @@
   /** game.js startDialog: wartet ein Duell-Ergebnis, kommt es dazu — nach
       dem Abschlussgespraech, in einem Minispiel davor. */
   function dialogDazu(G, lines) {
+    // Die eigene Figur ist heute der Boss: die kleine Szene vorne ins Intro
+    // (hinter die Kapitelkarte)
+    if (K.ersatzWitz && K.an && !G.scene) {
+      var w = ersatzZeilen(K.ersatzWitz);
+      K.ersatzWitz = null;
+      lines = lines || [];
+      var vorn = (lines[0] && lines[0][0] === 'kapitel') ? 1 : 0;
+      lines = lines.slice(0, vorn).concat(w).concat(lines.slice(vorn));
+    }
     if (!K.duellOffen) return lines;
     var d = K.duellOffen;
     K.duellOffen = null;
@@ -800,9 +868,9 @@
     var z = [['karte', ((mod && mod.vsTitel) || 'RENNEN') + '|' + name + ' GEWINNT|' + (sieger === 1 ? P1_FARBE : f.col)]];
     if (sieger === 1) {
       z.push(['yusuf', rnd(sp.yusufGewinnt)]);
-      z.push([f.id, rnd(sp.zweiterVerliert)]);
+      z.push([sprecherVon(f), rnd(sp.zweiterVerliert)]);
     } else {
-      z.push([f.id, rnd(sp.zweiterGewinnt)]);
+      z.push([sprecherVon(f), rnd(sp.zweiterGewinnt)]);
       z.push(['yusuf', rnd(sp.yusufVerliert)]);
     }
     return z;
@@ -1269,13 +1337,27 @@
     K.menuIdx = 0;
   }
 
-  function menueRect(i, n) { return { x: 512 / 2 - 80, y: 214 + i * 13 - 3 - (n > 3 ? 6 : 0) - (n > 4 ? 10 : 0), w: 160, h: 13 }; }
+  /* Aufbau des Menues (512 x 288): oben Titel, links Yusuf und Spieler 2,
+     rechts die Karte zur Figur (Spezial, Witz-Werte, Sprueche), darunter alle
+     Figuren in einer Reihe, darunter je eine Zeile Steuerung, unten die Punkte. */
+  var REIHE_Y = 166;            // Fuesse der kleinen Figuren in der Reihe
+  function menueRect(i, n) { return { x: 512 / 2 - 80, y: 197 + i * 13 - 3 + (5 - Math.min(5, n)) * 6, w: 160, h: 13 }; }
+  function reihe(W) {
+    var n = FIGUREN.length, sw = Math.min(24, Math.floor((W - 24) / n));
+    return { n: n, sw: sw, x0: W / 2 - (n * sw) / 2 + sw / 2 };
+  }
 
   /** Codes und zusammengesetzte Namen nicht uebersetzen (sprache.js). */
   function roh(s) { if (global.Sprache && global.Sprache.schonUebersetzt) global.Sprache.schonUebersetzt(s); return s; }
 
+  function gewaehlt(G) {
+    K.wahlT = G.tick || 0;
+    var f = FIGUREN[K.wahl];
+    K.spruch = f && f.sprueche ? (Math.random() * f.sprueche.length) | 0 : 0;
+  }
   function waehlen(G, d) {
     K.wahl = (K.wahl + d + FIGUREN.length) % FIGUREN.length;
+    gewaehlt(G);
     S().play('move');
   }
 
@@ -1304,8 +1386,15 @@
         r = menueRect(i, n);
         if (tp.x >= r.x && tp.x < r.x + r.w && tp.y >= r.y && tp.y < r.y + r.h) { K.menuIdx = i; aktivieren(G, l[i]); return; }
       }
+      // Eine Figur in der Reihe antippen
+      var rh = reihe(512);
+      if (tp.y > REIHE_Y - 32 && tp.y < REIHE_Y + 4) {
+        var j = Math.round((tp.x - rh.x0) / rh.sw);
+        if (j >= 0 && j < rh.n && j !== K.wahl) { K.wahl = j; gewaehlt(G); S().play('move'); }
+        return;
+      }
       // Pfeile neben Spieler 2 antippen: andere Figur
-      if (tp.y > 70 && tp.y < 150 && tp.x > 512 / 2 + 20) waehlen(G, tp.x > 512 / 2 + 90 ? 1 : -1);
+      if (tp.y > 40 && tp.y < 126 && tp.x > 110 && tp.x < 236) waehlen(G, tp.x > 166 ? 1 : -1);
       return;
     }
     if (I.hit('down')) { K.menuIdx = (K.menuIdx + 1) % n; S().play('move'); }
@@ -1316,7 +1405,8 @@
     if (I.hit('jump') || I.hit('confirm')) aktivieren(G, l[K.menuIdx]);
   }
 
-  /** Steuerung der beiden, so wie sie gerade verteilt ist. */
+  /** Steuerung der beiden, so wie sie gerade verteilt ist: je Spieler die
+      Ueberschrift und was welche Taste macht. */
   function steuerZeilen(G) {
     var pads = In().padZahl ? In().padZahl() : 0;
     var tasten1 = ['A D = LAUFEN', 'LEERTASTE = SPRINGEN', 'SHIFT = SCHLAGEN', 'STRG = ARSCHBOMBE'];
@@ -1334,8 +1424,56 @@
     if (pads >= 2) return [['CONTROLLER 1'].concat(pad), ['CONTROLLER 2'].concat(pad)];
     if (pads === 1) return [['TASTATUR', 'PFEILE ODER A D = LAUFEN', 'LEERTASTE = SPRINGEN', 'SHIFT = SCHLAGEN', 'STRG = ARSCHBOMBE'],
                             ['CONTROLLER'].concat(pad)];
-    if (G.touch) return [['TOUCH'], ['CONTROLLER ANSCHLIESSEN']];
+    if (G.touch) return [['TOUCH'], ['CONTROLLER ANSCHLIESSEN ODER ONLINE SPIELEN']];
     return [['TASTATUR LINKS'].concat(tasten1), ['TASTATUR RECHTS'].concat(tasten2)];
+  }
+
+  /** Eine Zeile Steuerung: SPIELER n, die Ueberschrift, dann was passt
+      (passt nicht alles in die Breite, fallen hinten Punkte weg). */
+  function steuerZeile(ctx, W, y, nr, z, col) {
+    var teile = ['SPIELER ' + nr].concat(z.filter(function (t) { return !!t; })), gap = 12, i;
+    var breite = function (l) { var b = 0; for (var j = 0; j < l.length; j++) b += F().measure(l[j], 1, 1) + (j ? gap : 0); return b; };
+    while (teile.length > 2 && breite(teile) > W - 12) teile.pop();
+    var x = W / 2 - breite(teile) / 2;
+    for (i = 0; i < teile.length; i++) {
+      F().draw(ctx, teile[i], x, y, { color: i === 0 ? col : (i === 1 ? '#d8cfe8' : '#a89cc0') });
+      x += F().measure(teile[i], 1, 1) + gap;
+    }
+  }
+
+  /** Die Karte zur Figur: Spezial, drei Witz-Werte (wachsen beim Waehlen),
+      dann abwechselnd ihr Spruch und was Yusuf dazu sagt. */
+  function karte(ctx, G, W, f) {
+    var x = 238, y = 44, w = W - x - 6, h = 92, i;
+    ctx.globalAlpha = 0.92;
+    rect(ctx, x, y, w, h, '#120c1c');
+    ctx.globalAlpha = 1;
+    rect(ctx, x, y, w, 1, f.col); rect(ctx, x, y + h - 1, w, 1, f.col);
+    rect(ctx, x, y, 1, h, f.col); rect(ctx, x + w - 1, y, 1, h, f.col);
+    var cy = y + 5, spez = F().wrap(f.spez || '', w - 12, 1, 1);
+    for (i = 0; i < Math.min(2, spez.length); i++) { F().draw(ctx, spez[i], x + 6, cy, { color: '#ffffff' }); cy += 9; }
+    if (spez.length < 2) cy += 9;
+    cy += 3;
+    var t = (G.tick || 0) - (K.wahlT || 0);
+    (f.werte || []).forEach(function (wv) {
+      F().draw(ctx, wv[0], x + 6, cy, { color: '#a89cc0' });
+      var bx = x + w - 6 - 10 * 11, voll = Math.min(wv[1], Math.floor(t / 3));
+      for (var s = 0; s < 10; s++) rect(ctx, bx + s * 11, cy, 10, 6, s < voll ? f.col : '#2a2038');
+      // Die volle Zehn blinkt (und die Null auch: das ist ja das Lustige)
+      if (t > 36 && (wv[1] === 10 || wv[1] === 0) && (G.tick >> 4) % 2 === 0) {
+        F().draw(ctx, wv[1] === 10 ? 'MAX' : '0', bx - 6, cy, { color: wv[1] === 10 ? '#ffd257' : '#ff6a6a', align: 'right' });
+      }
+      cy += 9;
+    });
+    cy += 4;
+    // Wer redet: erst die Figur, dann Yusuf, dann wieder die Figur ...
+    var yusufDran = (Math.floor(t / 150) % 2) === 1 && !!f.yusuf;
+    var wer = yusufDran ? 'YUSUF' : f.name, col = yusufDran ? P1_FARBE : f.col;
+    var txt = yusufDran ? f.yusuf : (f.sprueche ? f.sprueche[K.spruch % f.sprueche.length] : '');
+    F().draw(ctx, wer, x + 6, cy, { color: col });
+    var zl = F().wrap(txt, w - 12, 1, 1);
+    for (i = 0; i < Math.min(2, zl.length); i++) F().draw(ctx, zl[i], x + 6, cy + 9 + i * 9, { color: '#e8e0f0' });
+    return yusufDran;
   }
 
   function menuDraw(ctx, G, W, H) {
@@ -1343,49 +1481,68 @@
     ctx.globalAlpha = 0.97;
     rect(ctx, 0, 0, W, H, '#0b0712');
     ctx.globalAlpha = 1;
+    var t = (G.tick || 0) - (K.wahlT || 0);
     // Honig-Glanz hinter den beiden
     if (LI() && LI().stufe() >= 1) {
-      LI().glow(ctx, W / 2 - 90, 100, 70, P1_FARBE, 0.16);
-      LI().glow(ctx, W / 2 + 90, 100, 70, f.col, 0.16);
+      LI().glow(ctx, 60, 80, 56, P1_FARBE, 0.16);
+      LI().glow(ctx, 166, 80, 56, f.col, 0.18);
     }
-    F().draw(ctx, 'ZU ZWEIT', W / 2, 12, { color: '#ffd257', align: 'center', scale: 2, shadow: true });
-    F().draw(ctx, 'DIE GANZE GESCHICHTE. ZWEI SPIELER. EIN HONIGKONTO.', W / 2, 32, { color: '#c8b8e0', align: 'center' });
-    F().draw(ctx, 'WER MEHR HONIG SAMMELT, GEWINNT DAS LEVEL. GOLDHONIG ZÄHLT FÜNF.', W / 2, 43, { color: '#ffd257', align: 'center' });
-
-    // Die beiden Figuren
+    // Die beiden Figuren (gross). Gerade gewaehlt: Spieler 2 jubelt
     var hop = Math.abs(Math.sin(G.tick * 0.08)) * 3;
-    P().drawChar(ctx, 'yusuf', W / 2 - 90, 116, { pose: 'idle', frame: (G.tick >> 5) & 1, face: 'laugh', scale: 2 });
-    P().drawChar(ctx, f.id, W / 2 + 90, 116 - hop, { pose: hop > 1.5 ? 'jump' : 'idle', frame: (G.tick >> 5) & 1, face: 'laugh', scale: 2, flip: true });
-    F().draw(ctx, 'SPIELER 1', W / 2 - 90, 122, { color: P1_FARBE, align: 'center', shadow: true });
-    F().draw(ctx, 'YUSUF', W / 2 - 90, 132, { color: '#ffffff', align: 'center', shadow: true });
-    F().draw(ctx, 'SPIELER 2', W / 2 + 90, 122, { color: f.col, align: 'center', shadow: true });
-    F().draw(ctx, f.name, W / 2 + 90, 132, { color: '#ffffff', align: 'center', shadow: true });
+    var yusufRedet = false;
+    ctx.save();
+    yusufRedet = karte(ctx, G, W, f);
+    ctx.restore();
+    P().drawChar(ctx, 'yusuf', 60, 104, { pose: 'idle', frame: (G.tick >> 5) & 1, face: yusufRedet ? 'laugh' : 'normal', scale: 2 });
+    var jubel = t < 40;
+    P().drawChar(ctx, f.id, 166, 104 - (jubel ? Math.abs(Math.sin(t * 0.25)) * 8 : hop),
+                 { pose: jubel ? 'cheer' : (hop > 1.5 ? 'jump' : 'idle'), frame: (G.tick >> 4) & 1,
+                   face: yusufRedet ? 'normal' : 'laugh', scale: 2, flip: true });
+    F().draw(ctx, '+', 113, 64, { color: '#ffd257', align: 'center', scale: 2, shadow: true });
+    F().draw(ctx, 'SPIELER 1', 60, 108, { color: P1_FARBE, align: 'center', shadow: true });
+    F().draw(ctx, 'YUSUF', 60, 117, { color: '#ffffff', align: 'center', shadow: true });
+    F().draw(ctx, 'SPIELER 2', 166, 108, { color: f.col, align: 'center', shadow: true });
+    F().draw(ctx, f.name, 166, 117, { color: '#ffffff', align: 'center', shadow: true });
     if ((G.tick >> 4) % 2 === 0) {
-      var nb = F().measure(f.name, 1, 1) / 2 + 10;
-      F().draw(ctx, '<', W / 2 + 90 - nb, 132, { color: f.col, align: 'center', shadow: true });
-      F().draw(ctx, '>', W / 2 + 90 + nb, 132, { color: f.col, align: 'center', shadow: true });
+      var nb = F().measure(f.name, 1, 1) / 2 + 9;
+      F().draw(ctx, '<', 166 - nb, 117, { color: f.col, align: 'center', shadow: true });
+      F().draw(ctx, '>', 166 + nb, 117, { color: f.col, align: 'center', shadow: true });
     }
-    F().draw(ctx, '+', W / 2, 90, { color: '#ffd257', align: 'center', scale: 2, shadow: true });
+    // Titel zuletzt ueber die Figuren (grosse Figuren ragen nach oben)
+    F().draw(ctx, 'ZU ZWEIT', W / 2, 8, { color: '#ffd257', align: 'center', scale: 2, shadow: true });
+    F().draw(ctx, 'DIE GANZE GESCHICHTE. ZWEI SPIELER. EIN HONIGKONTO.', W / 2, 25, { color: '#c8b8e0', align: 'center', shadow: true });
+    F().draw(ctx, 'WER MEHR HONIG SAMMELT, GEWINNT DAS LEVEL. GOLDHONIG ZÄHLT FÜNF.', W / 2, 34, { color: '#ffd257', align: 'center', shadow: true });
 
-    // Wer welche Tasten hat
-    var sz = steuerZeilen(G);
-    for (var s = 0; s < 2; s++) {
-      var x = W / 2 + (s ? 90 : -90);
-      for (i = 0; i < sz[s].length; i++) {
-        F().draw(ctx, sz[s][i], x, 146 + i * 10, { color: i === 0 ? (s ? f.col : P1_FARBE) : '#a89cc0', align: 'center' });
+    // Alle Figuren in einer Reihe, die gewaehlte hebt sich ab
+    var rh = reihe(W);
+    for (i = 0; i < rh.n; i++) {
+      var fx = rh.x0 + i * rh.sw, sel = i === K.wahl;
+      if (sel) {
+        rect(ctx, fx - rh.sw / 2, REIHE_Y - 33, rh.sw, 35, 'rgba(255,255,255,0.08)');
+        rect(ctx, fx - rh.sw / 2, REIHE_Y + 2, rh.sw, 2, FIGUREN[i].col);
       }
+      ctx.globalAlpha = sel ? 1 : 0.55;
+      P().drawChar(ctx, FIGUREN[i].id, fx, REIHE_Y - (sel ? Math.abs(Math.sin(G.tick * 0.12)) * 2 : 0),
+                   { pose: sel ? 'cheer' : 'idle', frame: (G.tick >> 5) & 1, face: sel ? 'laugh' : 'normal', flip: true });
     }
+    ctx.globalAlpha = 1;
+    F().draw(ctx, (K.wahl + 1) + ' / ' + rh.n, 8, REIHE_Y - 41, { color: '#6a5f80' });
+
+    // Wer welche Tasten hat (je eine Zeile)
+    var sz = steuerZeilen(G);
+    steuerZeile(ctx, W, REIHE_Y + 8, 1, sz[0], P1_FARBE);
+    steuerZeile(ctx, W, REIHE_Y + 17, 2, sz[1], f.col);
 
     // Menue
     var l = menuePunkte(G), n = l.length;
     for (i = 0; i < n; i++) {
-      var r = menueRect(i, n), sel = i === K.menuIdx;
-      if (sel) {
+      var r = menueRect(i, n), auswahl = i === K.menuIdx;
+      if (auswahl) {
         rect(ctx, r.x, r.y, r.w, r.h - 1, 'rgba(255,210,87,0.14)');
         // Wie im Hauptmenue: der Pfeil (Schrift: | ist ein Pfeil) steht vor dem Eintrag
         F().draw(ctx, '|', W / 2 - F().measure(l[i].label, 1, 1) / 2 - 14, r.y + 3, { color: '#ffd257' });
       }
-      F().draw(ctx, l[i].label, W / 2, r.y + 3, { color: sel ? '#ffffff' : '#d8cfe8', align: 'center', shadow: true });
+      F().draw(ctx, l[i].label, W / 2, r.y + 3, { color: auswahl ? '#ffffff' : '#d8cfe8', align: 'center', shadow: true });
     }
     F().draw(ctx, G.hinweis ? G.hinweis('LINKS / RECHTS = FIGUR VON SPIELER 2') : 'LINKS / RECHTS = FIGUR VON SPIELER 2',
              W / 2, H - 11, { color: '#8f86a8', align: 'center' });
@@ -1401,6 +1558,9 @@
     // Menue ZU ZWEIT (game.js: Zustand 'koop')
     oeffnen: oeffnen, menuUpdate: menuUpdate, menuDraw: menuDraw,
     waehle: function (id) { for (var i = 0; i < FIGUREN.length; i++) if (FIGUREN[i].id === id) K.wahl = i; },
+    /** Wer Spieler 2 eigentlich ist (Sixpack-Huseyin -> huseyin), fuer Abfragen wie beim Fussball. */
+    basis: function () { return basisVon(K.figur); },
+    basisVon: basisVon,
     // Level und Ablauf
     laden: laden, vorher: vorher, zweiter: zweiter, tod: tod,
     zurueck: function (G) { if (K.an && K.p1 && G.player !== K.p1) G.player = K.p1; },
@@ -1421,7 +1581,7 @@
     // Zeichnen
     zeichnen: zeichnen, blaseMalen: blaseMalen, zeichen: zeichen, hud: hud, oben: oben, wer: wer,
     // fuer Tests
-    _K: K, _frei: frei, _duellZeilen: duellZeilen, _texte: { DUELL: DUELL, FUEHRT: FUEHRT, VS: VS_SPRUECHE, ESSEN: VS_ESSEN }, _blaseStart: blaseStart, _platzen: platzen, _leine: leine, LEINE: LEINE
+    _K: K, _frei: frei, _duellZeilen: duellZeilen, _texte: { DUELL: DUELL, FUEHRT: FUEHRT, VS: VS_SPRUECHE, ESSEN: VS_ESSEN, DOPPELT: DOPPELT, ERSATZ: ERSATZ, ERSATZ_YUSUF: ERSATZ_YUSUF }, _ersatzZeilen: ersatzZeilen, _blaseStart: blaseStart, _platzen: platzen, _leine: leine, LEINE: LEINE
   };
 
 })(window);
