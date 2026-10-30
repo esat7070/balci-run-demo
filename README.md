@@ -16,8 +16,8 @@ Huseyin im Weg.
 - **Tageslauf** (ab Level 2 im Hauptmenü): jeden Tag ein neues Level, für alle
   gleich — Bestzeit, Serie und ein Ergebnis zum Teilen mit der Gruppe
 - **Zu zweit:** an einem Gerät oder **online, jeder an seinem eigenen** —
-  ZU ZWEIT → ONLINE SPIELEN: einer lädt ein und bekommt einen Code, der andere
-  gibt ihn ein. Die beiden Geräte verbinden sich direkt (WebRTC).
+  NEUES SPIEL → KOOP → ONLINE HOSTEN: einer bekommt einen Code, der andere
+  gibt ihn unter KOOP → ONLINE BEITRETEN ein. Die beiden Geräte verbinden sich direkt (WebRTC).
 - Deutsch und Englisch (EINSTELLUNGEN → SPRACHE)
 
 ## Steuerung

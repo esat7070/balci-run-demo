@@ -3,9 +3,12 @@
    Esat, 29.10.: "Es soll Peer-to-Peer sein. Lokal wird das niemand spielen."
 
    So geht es:
-   - Spieler 1 laedt ein (ZU ZWEIT -> ONLINE SPIELEN -> FREUND EINLADEN)
-     und bekommt einen Code aus vier Zeichen. Sein Spiel ist der Gastgeber.
-   - Spieler 2 gibt den Code ein (oder oeffnet den Link mit ?online=CODE).
+   - Spieler 1: NEUES SPIEL / WEITER -> KOOP -> ONLINE HOSTEN (koop.js) und
+     bekommt einen Code aus vier Zeichen. Sein Spiel ist der Gastgeber.
+   - Spieler 2 startet sein eigenes Spiel (Steam: jeder hat es gekauft; zum
+     Testen der Link) -> KOOP -> ONLINE BEITRETEN und gibt den Code ein (oder
+     oeffnet den Link mit ?online=CODE). Ist er drin, waehlt er seine Figur
+     (koop.js, Figurenwahl), dann geht es los.
    - Ein oeffentlicher Vermittler (der kostenlose PeerJS-Server) reicht nur
      die Verbindungsdaten weiter — ein paar Nachrichten. Danach reden die
      beiden Geraete direkt miteinander (WebRTC), ohne Server dazwischen.
@@ -71,7 +74,7 @@
     // Steam: Lobby fuer die Freundesliste (Gastgeber) bzw. ueber Steam eingeladen (Freund)
     steamLobby: false, steamCode: null, steamGast: false,
     // Menue
-    modus: 'start', idx: 0, tipp: '', fehler: '', G: null
+    modus: 'host', idx: 0, tipp: '', fehler: '', G: null
   };
 
   /* ---------------- Kleinkram ---------------- */
@@ -227,6 +230,8 @@
       In().netz(true);
       toast('SPIELER 2 IST ONLINE DA', 'DIREKT VERBUNDEN', '#8cd85a');
       if (S()) S().play('select');
+      // Wartet der Gastgeber auf ihn: jetzt waehlt der Freund seine Figur
+      if (N.G && N.G.state === 'online' && KO() && KO().wahlOeffnen) KO().wahlOeffnen(N.G, 'online');
     } else {
       var G = N.G;
       // Der Vermittler wird nicht mehr gebraucht
@@ -246,6 +251,7 @@
     if (N.pingT) { clearInterval(N.pingT); N.pingT = null; }
     if (N.rolle === 'host') {
       In().netz(false);
+      if (N.G && N.G.state === 'koopwahl' && KO() && KO().wahlArt() === 'online') { N.G.state = 'online'; N.modus = 'host'; N.idx = 0; }
       N.status = N.sig ? 'warten' : 'verbinden';
       if (!N.sig) hostSignal();
       if (warDa) toast(absicht ? 'SPIELER 2 IST GEGANGEN' : 'SPIELER 2 IST WEG', 'MIT DEM CODE ' + roh(N.code) + ' KANN ER WIEDER REIN', '#ff9a5a');
@@ -668,7 +674,8 @@
   /** game.js update, direkt nach Input.poll: duerfen die Tasten des Freundes
       gerade auch fuer alle zaehlen (Dialoge weiterdruecken, Ergebnis
       bestaetigen, Minispiele)? Zu zweit im Spiel ja, wie ein zweiter
-      Controller. Im Menue ZU ZWEIT sucht er sich seine Figur aus. Pause,
+      Controller. Seine Figur waehlt er mit den Tasten von Spieler 2
+      (koop.js liest Input.spieler(2), das geht immer). Pause,
       Hauptmenue, Shop und Einstellungen gehoeren dem Gastgeber allein —
       und spielt der allein, steuert der Freund gar nichts. */
   var FREUND_DARF = { play: 1, dialog: 1, clear: 1 };
@@ -676,7 +683,7 @@
     N.G = G;
     if (N.rolle !== 'host') return;
     var K = KO(), koop = K && K.an();
-    In().netzMenue(N.status === 'da' && (G.state === 'koop' || (koop && !!FREUND_DARF[G.state])));
+    In().netzMenue(N.status === 'da' && koop && !!FREUND_DARF[G.state]);
   }
 
   /** Online jeder sein eigenes Bild (Rennen, Minispiele gegeneinander)? */
@@ -704,20 +711,43 @@
     if (S()) S().play('hurt');
   }
 
+  /** koop.js, KOOP -> ONLINE HOSTEN: Code holen und auf den Freund warten.
+      Ist er schon da, geht es gleich zur Figurenwahl. */
+  function hostenStart(G) {
+    N.G = G;
+    if (N.rolle === 'gast') beenden(false);
+    if (N.rolle === 'host' && N.status === 'da') { KO().wahlOeffnen(G, 'online'); return; }
+    G.state = 'online';
+    N.modus = 'host'; N.idx = 0;
+    if (N.rolle !== 'host') hosten(G);
+  }
+
+  /** koop.js, KOOP -> ONLINE BEITRETEN: den Code des Freundes eingeben. */
+  function beitretenStart(G) {
+    N.G = G;
+    if (N.rolle) beenden(false);
+    G.state = 'online';
+    codeEingabe(G);
+  }
+
+  /** Zurueck auf die Seite LOKAL / ONLINE HOSTEN / ONLINE BEITRETEN. */
+  function zurKoopSeite(G) {
+    formularZu();
+    if (KO() && KO().modusKoop) KO().modusKoop(G); else G.state = 'title';
+  }
+
   function oeffnen(G) {
     N.G = G;
     G.state = 'online';
-    N.modus = N.rolle === 'host' ? 'host' : (N.rolle === 'gast' ? 'gast' : 'start');
+    N.modus = N.rolle === 'host' ? 'host' : (N.rolle === 'gast' ? 'gast' : 'eingabe');
     N.idx = 0;
   }
 
   function punkte() {
-    if (N.modus === 'start') return [{ k: 'einladen', label: 'FREUND EINLADEN' }, { k: 'eingeben', label: 'CODE EINGEBEN' },
-                                      { k: 'zurueck', label: 'ZURÜCK' }];
     if (N.modus === 'host') {
-      var l = [{ k: 'zurueck', label: N.status === 'da' ? 'WEITER ZUM SPIEL' : 'ZURÜCK (CODE BLEIBT)' },
-               { k: 'beenden', label: 'ONLINE BEENDEN' }];
-      if (N.steamLobby && N.status !== 'da') l.unshift({ k: 'steam', label: 'STEAM-FREUNDE EINLADEN' });
+      var l = [{ k: 'abbrechen', label: 'ABBRECHEN' }];
+      if (N.status === 'da') l.unshift({ k: 'wahl', label: 'WEITER' });
+      else if (N.steamLobby) l.unshift({ k: 'steam', label: 'STEAM-FREUNDE EINLADEN' });
       return l;
     }
     if (N.modus === 'gast') return [{ k: 'abbrechen', label: 'ABBRECHEN' }];
@@ -729,12 +759,9 @@
 
   function aktivieren(G, it) {
     if (S()) S().play('select');
-    if (it.k === 'einladen') { hosten(G); if (N.modus !== 'fehler') { N.modus = 'host'; N.idx = 0; } }
-    else if (it.k === 'eingeben') codeEingabe(G);
-    else if (it.k === 'zurueck') { if (KO()) KO().oeffnen(G); else G.state = 'title'; }
-    else if (it.k === 'beenden') { beenden(false); N.modus = 'start'; N.idx = 0; }
-    else if (it.k === 'abbrechen') { beenden(true); N.modus = 'start'; N.idx = 0; }
-    else if (it.k === 'ok') { N.modus = 'start'; N.idx = 0; }
+    if (it.k === 'wahl') KO().wahlOeffnen(G, 'online');
+    else if (it.k === 'abbrechen') { beenden(N.modus !== 'host'); zurKoopSeite(G); }
+    else if (it.k === 'ok') zurKoopSeite(G);
     else if (it.k === 'steam' && steam() && steam().steamEinladen) steam().steamEinladen();
   }
 
@@ -765,9 +792,7 @@
     if (I.hit('down')) { N.idx = (N.idx + 1) % n; S().play('move'); }
     if (I.hit('up')) { N.idx = (N.idx + n - 1) % n; S().play('move'); }
     if (I.hit('back') || I.hit('pause')) {
-      if (N.modus === 'gast') aktivieren(G, { k: 'abbrechen' });
-      else if (N.modus === 'fehler') aktivieren(G, { k: 'ok' });
-      else aktivieren(G, { k: 'zurueck' });
+      aktivieren(G, { k: N.modus === 'fehler' ? 'ok' : 'abbrechen' });
       return;
     }
     if (I.hit('jump') || I.hit('confirm')) aktivieren(G, l[N.idx]);
@@ -822,7 +847,7 @@
     }
     if (I.hit('back') || I.hit('pause')) {
       if (N.tipp.length) { N.tipp = N.tipp.slice(0, -1); cursorZeichen = Math.max(0, N.tipp.length - 1); }
-      else { formularZu(); N.modus = 'start'; N.idx = 1; }
+      else zurKoopSeite(G);
     }
   }
 
@@ -845,7 +870,7 @@
       } else if (e.code === 'Enter' || e.code === 'NumpadEnter') {
         if (N.tipp.length === CODE_LAENGE) beitreten(G, N.tipp);
       } else if (e.code === 'Escape') {
-        N.modus = 'start'; N.idx = 1;
+        zurKoopSeite(G);
       } else return;
       e.preventDefault();
       e.stopImmediatePropagation();
@@ -880,7 +905,7 @@
         formularZu();
         beitreten(N.G, c);
       });
-      if (zur) zur.addEventListener('click', function () { formularZu(); N.modus = 'start'; N.idx = 1; });
+      if (zur) zur.addEventListener('click', function () { if (N.G) zurKoopSeite(N.G); });
     }
     if (d.readyState === 'loading') d.addEventListener('DOMContentLoaded', los); else los();
   })();
@@ -915,8 +940,7 @@
     F().draw(ctx, 'JEDER AN SEINEM GERÄT. DIE BEIDEN GERÄTE VERBINDEN SICH DIREKT.', W / 2, 32, { color: '#c8b8e0', align: 'center' });
     F().draw(ctx, 'DAS SPIEL LÄUFT BEIM GASTGEBER, DER FREUND BEKOMMT BILD UND TON.', W / 2, 43, { color: '#8f86a8', align: 'center' });
 
-    if (N.modus === 'start') zeichneStart(ctx, G, W);
-    else if (N.modus === 'host') zeichneHost(ctx, G, W);
+    if (N.modus === 'host') zeichneHost(ctx, G, W);
     else if (N.modus === 'eingabe') zeichneEingabe(ctx, G, W, H);
     else if (N.modus === 'gast') zeichneGast(ctx, G, W);
     else if (N.modus === 'fehler') zeichneFehler(ctx, G, W);
@@ -954,13 +978,6 @@
     }
   }
 
-  function zeichneStart(ctx, G, W) {
-    zweiGeraete(ctx, G, W, 62, false, 'DU', 'DEIN FREUND');
-    F().draw(ctx, 'FREUND EINLADEN = DU BEKOMMST EINEN CODE UND SAGST IHN DEINEM FREUND.', W / 2, 152, { color: '#d8cfe8', align: 'center' });
-    F().draw(ctx, 'CODE EINGEBEN = DEIN FREUND HAT DICH EINGELADEN.', W / 2, 163, { color: '#d8cfe8', align: 'center' });
-    if (!kannWebRTC()) F().draw(ctx, FEHLER.geraet[0], W / 2, 180, { color: '#ff6a6a', align: 'center' });
-  }
-
   function zeichneHost(ctx, G, W) {
     var da = N.status === 'da';
     F().draw(ctx, 'DEIN CODE', W / 2, 56, { color: '#a89cc0', align: 'center' });
@@ -984,9 +1001,9 @@
     else { t = (FEHLER[N.fehler] || FEHLER.netz)[0]; col = '#ff6a6a'; }
     F().draw(ctx, t, W / 2, y + 4, { color: col, align: 'center', scale: da ? 2 : 1, shadow: true });
     if (!da) {
-      F().draw(ctx, 'DEIN FREUND WÄHLT: ZU ZWEIT > ONLINE SPIELEN > CODE EINGEBEN', W / 2, y + 20, { color: '#a89cc0', align: 'center' });
+      F().draw(ctx, 'DEIN FREUND WÄHLT: KOOP > ONLINE BEITRETEN', W / 2, y + 20, { color: '#a89cc0', align: 'center' });
       F().draw(ctx, N.steamLobby ? 'ODER ÜBER STEAM: EINLADEN ODER IN DER FREUNDESLISTE SPIEL BEITRETEN.'
-                                 : 'DU KANNST SCHON LOSSPIELEN. ER KANN JEDERZEIT DAZUKOMMEN.', W / 2, y + 31, { color: '#8f86a8', align: 'center' });
+                                 : 'SOBALD ER DRIN IST, WÄHLT ER SEINE FIGUR.', W / 2, y + 31, { color: '#8f86a8', align: 'center' });
     } else {
       F().draw(ctx, 'ER STEUERT SPIELER 2. IM MENÜ ZU ZWEIT SUCHT ER SICH SEINE FIGUR AUS.', W / 2, y + 24, { color: '#a89cc0', align: 'center' });
     }
@@ -1004,7 +1021,7 @@
     var pad = In().quelle && In().quelle() === 'pad';
     F().draw(ctx, pad ? 'HOCH / RUNTER = ZEICHEN   A = WEITER   B = LÖSCHEN' : 'EINFACH TIPPEN.   ENTER = VERBINDEN   ESC = ZURÜCK',
              W / 2, 142, { color: '#8f86a8', align: 'center' });
-    F().draw(ctx, 'DEIN FREUND SIEHT DEN CODE UNTER ZU ZWEIT > ONLINE SPIELEN > FREUND EINLADEN.', W / 2, 160, { color: '#6a5f80', align: 'center' });
+    F().draw(ctx, 'DEIN FREUND SIEHT DEN CODE BEI SICH UNTER KOOP > ONLINE HOSTEN.', W / 2, 160, { color: '#6a5f80', align: 'center' });
   }
 
   function zeichneGast(ctx, G, W) {
@@ -1079,6 +1096,7 @@
     start: start,
     tick: tick,
     oeffnen: oeffnen, menuUpdate: menuUpdate, menuDraw: menuDraw,
+    hostenStart: hostenStart, beitretenStart: beitretenStart,
     gastUpdate: gastUpdate, gastDraw: gastDraw,
     nachRender: nachRender,
     eigeneBilder: eigeneBilder, gastBild: gastBild,

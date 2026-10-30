@@ -1220,7 +1220,9 @@
 
     switch (G.state) {
       case 'title': updateTitle(); break;
-      case 'koop': global.Koop.menuUpdate(G); break;
+      // SOLO / KOOP, LOKAL / ONLINE und die Figurenwahl (koop.js)
+      case 'modus': global.Koop.modusUpdate(G); break;
+      case 'koopwahl': global.Koop.wahlUpdate(G); break;
       // Online zu zweit: Einladen / Code eingeben, und beim Freund das Bild vom Gastgeber
       case 'online': global.Netz.menuUpdate(G); break;
       case 'netz': global.Netz.gastUpdate(G); break;
@@ -1272,8 +1274,6 @@
     if (save.unlocked > 1) {
       items.push({ k: 'continue', label: 'WEITER AB LEVEL ' + (continueTarget() + 1) });
     }
-    // Die Geschichte zu zweit spielen (koop.js)
-    if (global.Koop) items.push({ k: 'koop', label: 'ZU ZWEIT', farbe: '#6fc8e8' });
     // Jeden Tag ein neues Level, fuer alle gleich (tageslauf.js) — ab Level 2
     if (global.Tageslauf && global.Tageslauf.verfuegbar() && save.unlocked > 1) {
       // Gold, solange der heutige Lauf noch fehlt
@@ -1315,8 +1315,8 @@
      benutzen dieselben Masse. */
   // Ab neun Eintraegen (Desktop mit WEITER und SHOP) etwas enger, damit
   // der letzte noch ueber dem Boden steht
-  // Mit ZU ZWEIT (koop.js) sind es bis zu zwoelf: dann noch enger, und nie
-  // hoeher als 110 (darueber steht der Untertitel)
+  // Bis zu zwoelf Eintraege: dann noch enger, und nie hoeher als 110
+  // (darueber steht der Untertitel)
   function titleMenuStep(n) { return n > 11 ? 11 : (n > 10 ? 12 : (n > 8 ? 13 : 15)); }
   function titleMenuTop(n) { return Math.max(110, Math.min(160 - (n - 5) * 9, 231 - (n - 1) * titleMenuStep(n))); }
   function titleBoardRect() { return { x: W - 158, y: 110, w: 150, h: 96 }; }
@@ -1324,12 +1324,11 @@
   function activateMenu(it) {
     S.resume();
     S.play('select');
-    if (it.k === 'koop') { global.Koop.oeffnen(G); return; }
-    // Was man hier startet, spielt man allein (zu zweit geht es ueber ZU ZWEIT)
+    // Erst einmal allein; SOLO oder KOOP fragt danach koop.js
     if (global.Koop && (it.k === 'play' || it.k === 'continue' || it.k === 'select' ||
                         it.k === 'tageslauf' || it.k === 'minis')) global.Koop.aus(G);
-    if (it.k === 'play') startGame(0);
-    else if (it.k === 'continue') startGame(continueTarget(), true);
+    if (it.k === 'play') losMitModus({ k: 'play' });
+    else if (it.k === 'continue') losMitModus({ k: 'continue' });
     else if (it.k === 'select') { G.state = 'select'; G.selIdx = 0; }
     else if (it.k === 'tageslauf') global.Tageslauf.starten(G);
     else if (it.k === 'scores') openScores();
@@ -1341,13 +1340,21 @@
     else if (it.k === 'beenden') beenden();
   }
 
-  /** Aus dem Menue ZU ZWEIT (koop.js): wie NEUES SPIEL, WEITER, LEVEL WÄHLEN. */
-  G.koopLos = function (k) {
-    if (k === 'play') startGame(0);
-    else if (k === 'continue') startGame(continueTarget(), true);
-    else if (k === 'select') { G.state = 'select'; G.selIdx = 0; }
+  /** NEUES SPIEL, WEITER oder ein Level aus der Auswahl: erst fragen, wie
+      gespielt wird (koop.js: SOLO oder KOOP, bei KOOP dann LOKAL, ONLINE
+      HOSTEN, ONLINE BEITRETEN — und die Figurenwahl). Esat, 30.10. */
+  function losMitModus(ziel) {
+    if (global.Koop) global.Koop.modus(G, ziel);
+    else G.koopLos(ziel);
+  }
+
+  /** Danach (koop.js): das Spiel wirklich starten. ziel = { k: 'play' | 'continue' | 'level', idx }. */
+  G.koopLos = function (ziel) {
+    if (typeof ziel === 'string') ziel = { k: ziel };
+    if (!ziel || ziel.k === 'play') startGame(0);
+    else if (ziel.k === 'continue') startGame(continueTarget(), true);
+    else if (ziel.k === 'level') startGame(ziel.idx);
   };
-  G.koopWeiterZiel = function () { return save.unlocked > 1 ? continueTarget() : -1; };
 
   /* ================= Entwickler-Taste (nur mit entwickler.js) =================
      Esat, 25.10.: "wenn ich P druecke, ist die erste Mutation vom Boss sofort
@@ -1486,7 +1493,7 @@
       for (var i = 0; i < max; i++) {
         var cr = cardRect(sc, i);
         if (inRect(tp, { x: cr.x, y: cr.y - 8, w: cr.w, h: cr.h + 8 })) {
-          if (G.selIdx === i) { S.play('select'); startGame(i); }
+          if (G.selIdx === i) { S.play('select'); losMitModus({ k: 'level', idx: i }); }
           else { G.selIdx = i; S.play('move'); }
           return;
         }
@@ -1503,7 +1510,7 @@
       G.selIdx -= sc.perRow; S.play('move');
     }
     if (global.Input.hit('jump') || global.Input.hit('confirm')) {
-      S.play('select'); startGame(G.selIdx);
+      S.play('select'); losMitModus({ k: 'level', idx: G.selIdx });
     }
     if (global.Input.hit('back') || global.Input.hit('pause')) {
       G.state = 'title'; S.play('select');
@@ -2485,7 +2492,8 @@
     ctx.clearRect(0, 0, W, H);
 
     if (G.state === 'title') { drawTitle(); }
-    else if (G.state === 'koop') { drawTitle(); global.Koop.menuDraw(ctx, G, W, H); }
+    else if (G.state === 'modus') { drawTitle(); global.Koop.modusDraw(ctx, G, W, H); }
+    else if (G.state === 'koopwahl') { global.Koop.wahlDraw(ctx, G, W, H); }
     else if (G.state === 'online') { drawTitle(); global.Netz.menuDraw(ctx, G, W, H); }
     else if (G.state === 'netz') { global.Netz.gastDraw(ctx, G, W, H, canvas); }
     else if (G.state === 'select') { drawSelect(); }
@@ -5169,8 +5177,6 @@
     F.draw(ctx, 'LEVEL WÄHLEN', W / 2, 24, {
       color: '#ffd257', align: 'center', scale: 3, shadow: true
     });
-    // Ueber das Menue ZU ZWEIT hierher gekommen (koop.js)
-    if (global.Koop && global.Koop.an()) F.draw(ctx, 'ZU ZWEIT', W - 8, 8, { color: '#6fc8e8', align: 'right', shadow: true });
 
     // Karten passen sich der Breite an — bei 7 Leveln war die letzte
     // Karte vorher halb abgeschnitten. Ab elf Leveln: zwei Reihen.
